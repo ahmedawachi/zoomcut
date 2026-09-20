@@ -105,7 +105,7 @@ def banner(w=2400, h=620) -> Image.Image:
     tw = d.textbbox((0, 0), tag, font=tf)
     d.text(((w - (tw[2] - tw[0])) // 2, int(h * 0.605)), tag, font=tf, fill=DIM)
 
-    sub = "automatic zooms  ·  no keyframing  ·  macOS"
+    sub = "automatic zooms  ·  no keyframing  ·  macOS, Windows, Linux"
     sf = font(int(h * 0.053), "Medium")
     sw = d.textbbox((0, 0), sub, font=sf)
     d.text(((w - (sw[2] - sw[0])) // 2, int(h * 0.755)), sub, font=sf, fill=(108, 112, 138))

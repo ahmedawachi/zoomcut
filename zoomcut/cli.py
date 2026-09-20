@@ -79,7 +79,7 @@ def _progress(label: str):
 def cmd_wallpapers(a):
     for w in wallpapers.discover():
         print(f"  {'*' if w['ready'] else ' '} {w['name']:<32} {w['kind']}")
-    print(f"\ndefault on this Mac: {wallpapers.default_name()}")
+    print(f"\ndefault on this machine: {wallpapers.default_name()}")
     return 0
 
 

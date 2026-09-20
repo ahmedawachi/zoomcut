@@ -227,7 +227,7 @@ ws = wallpapers.discover()
 if QUICK or not ws:
     skip("wallpaper checks", "no desktop pictures available" if not ws else "--quick")
 else:
-    check("wallpapers found on this Mac", len(ws) > 0, str(len(ws)))
+    check("wallpapers found on this machine", len(ws) > 0, str(len(ws)))
     check("a default wallpaper is chosen", bool(wallpapers.default_name()))
     p = wallpapers.materialise(wallpapers.default_name())
     check("default wallpaper decodes to a PNG", os.path.isfile(p) and os.path.getsize(p) > 1000)

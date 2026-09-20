@@ -10,7 +10,7 @@ shadow, the camera pushes in where it matters and **holds perfectly still where 
 
 [![tests](https://github.com/ahmedawachi/zoomcut/actions/workflows/tests.yml/badge.svg)](https://github.com/ahmedawachi/zoomcut/actions/workflows/tests.yml)
 [![release](https://img.shields.io/github/v/release/ahmedawachi/zoomcut?color=6c63ff&label=release)](https://github.com/ahmedawachi/zoomcut/releases/latest)
-[![platforms](https://img.shields.io/badge/macOS%20·%20Windows%20·%20Linux-000?logo=apple&logoColor=white)](#requirements)
+[![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-6c63ff)](#requirements)
 [![python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](#requirements)
 [![license](https://img.shields.io/badge/license-MIT-6c63ff)](LICENSE)
 

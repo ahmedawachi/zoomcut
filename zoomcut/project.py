@@ -21,7 +21,7 @@ PRESETS = {
 DEFAULT_STYLE = {
     "background": {
         "type": "wallpaper",          # wallpaper | image | gradient | color
-        "name": None,                 # wallpaper name; None -> this Mac's default
+        "name": None,                 # wallpaper name; None -> the desktop default
         "path": None,                 # for type=image
         "gradient": {"from": "#3F37C9", "to": "#8C87DF",
                      "p0": [0.0, 0.0], "p1": [1.0, 1.0]},
