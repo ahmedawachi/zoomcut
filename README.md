@@ -157,7 +157,7 @@ zoomcut            # opens the app at http://127.0.0.1:8765
 missing:
 
 ```
-Zoomcut 1.1.0 on macOS
+Zoomcut 1.1.1 on macOS
 
   OK    ffmpeg  —  /opt/homebrew/bin/ffmpeg
   OK    ffprobe  —  /opt/homebrew/bin/ffprobe
