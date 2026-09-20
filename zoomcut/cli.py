@@ -117,6 +117,45 @@ def cmd_record(a):
     return 0
 
 
+def cmd_doctor(a):
+    """Check everything Zoomcut needs, and say plainly what is missing."""
+    from . import wallpapers
+    from .util import tool, have, INSTALL_HINT
+    from .winlist import pickable, WindowListError
+    ok = True
+
+    def line(good, label, detail=""):
+        nonlocal ok
+        ok = ok and good
+        print(f"  {'OK  ' if good else 'MISS'}  {label}" + (f"  —  {detail}" if detail else ""))
+
+    print(f"Zoomcut {__import__('zoomcut').__version__} on {platform_name()}\n")
+    if have("ffmpeg"):
+        line(True, "ffmpeg", tool("ffmpeg"))
+        line(have("ffprobe"), "ffprobe", tool("ffprobe") if have("ffprobe") else "missing")
+    else:
+        line(False, "ffmpeg", INSTALL_HINT.get(platform_name(), "see https://ffmpeg.org"))
+
+    avail, why = recorder.available()
+    line(avail, f"screen recording ({recorder.backend_name() or 'no backend'})",
+         "" if avail else why)
+
+    try:
+        n = len(pickable())
+        line(True, "window picking", f"{n} window(s) you could record")
+    except WindowListError as e:
+        line(False, "window picking", str(e).split("\n")[0])
+
+    wl = wallpapers.discover()
+    print(f"  OK    backgrounds  —  {len(wl)} wallpaper(s)"
+          f"{' (gradient only)' if not wl else ''}")
+    print(f"  OK    output folder  —  {output_dir()}")
+
+    print("\n" + ("Everything Zoomcut needs is here. Run `zoomcut` to start."
+                  if ok else "Fix the MISS lines above, then run `zoomcut doctor` again."))
+    return 0 if ok else 1
+
+
 def cmd_windows(a):
     from .winlist import pickable
     ws = pickable()
@@ -223,6 +262,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("wallpapers", help="list the macOS wallpapers available here")
     s.set_defaults(func=cmd_wallpapers)
+
+    s = sub.add_parser("doctor", help="check that everything Zoomcut needs is installed")
+    s.set_defaults(func=cmd_doctor)
 
     s = sub.add_parser("windows", help="list windows you can record")
     s.set_defaults(func=cmd_windows)

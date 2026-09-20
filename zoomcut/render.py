@@ -16,6 +16,11 @@ from . import wallpapers
 
 Image.MAX_IMAGE_PIXELS = None
 SS = 4  # supersampling used for antialiasing the window mask
+# Sub-LSB noise added to the background before encoding. The background never
+# moves, so any banding h264 introduces sits on screen for the whole clip;
+# this gives the encoder something to hide the contour in. Exposed as a
+# constant so the test suite can render an undithered control and compare.
+DITHER = 1.2
 
 
 # --------------------------------------------------------------------------
@@ -122,11 +127,9 @@ def build_background(style: dict, ow: int, oh: int) -> np.ndarray:
     dim = float(bg_cfg.get("dim") or 0.0)
     if dim > 0:
         bg = bg * (1.0 - dim)
-    # Smooth backgrounds (skies, gradients) band badly in 8-bit 4:2:0 and the
-    # background never moves, so the artefact would sit on screen the whole
-    # clip. A sub-LSB dither gives the encoder something to hide it in.
-    rng = np.random.default_rng(7)
-    bg = bg + rng.uniform(-1.2, 1.2, size=bg.shape).astype(np.float32)
+    if DITHER > 0:
+        rng = np.random.default_rng(7)
+        bg = bg + rng.uniform(-DITHER, DITHER, size=bg.shape).astype(np.float32)
     return bg
 
 

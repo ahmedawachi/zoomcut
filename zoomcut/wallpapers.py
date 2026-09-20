@@ -102,11 +102,8 @@ def discover() -> list[dict]:
     return sorted(out, key=lambda w: w["name"].lower())
 
 
-def materialise(name_or_path: str) -> str:
-    """Return a path Pillow can open for a wallpaper name (or pass an image through)."""
-    if os.path.isfile(name_or_path) and Path(name_or_path).suffix.lower() in DIRECT_SUFFIXES:
-        return name_or_path
-
+def resolve(name_or_path: str) -> dict:
+    """Find a wallpaper by name, fuzzily, or accept a path."""
     want = str(name_or_path).strip().lower()
     catalog = discover()
     entry = None
@@ -134,6 +131,15 @@ def materialise(name_or_path: str) -> str:
                      "cached": str(CACHE / (_safe(Path(name_or_path).stem) + ".png"))}
         else:
             raise ZoomcutError(f"no wallpaper named {name_or_path!r} on this machine")
+    return entry
+
+
+def materialise(name_or_path: str) -> str:
+    """A full-size path Pillow can open. Only for rendering - a thumbnail must
+    use thumbnail(), which never decodes the whole image."""
+    if os.path.isfile(name_or_path) and Path(name_or_path).suffix.lower() in DIRECT_SUFFIXES:
+        return name_or_path
+    entry = resolve(name_or_path)
 
     if Path(entry["source"]).suffix.lower() in DIRECT_SUFFIXES:
         return entry["source"]
@@ -182,3 +188,80 @@ def default_name() -> str | None:
         if any(k in n.lower() for k in ("tahoe", "sequoia", "sonoma", "bloom", "windows")):
             return n
     return names[0]
+
+
+def _cover_resize(im, w: int, h: int):
+    from PIL import Image
+    im = im.convert("RGB")
+    tr, ir = w / h, im.width / im.height
+    if ir > tr:
+        nw = int(im.height * tr)
+        im = im.crop(((im.width - nw) // 2, 0, (im.width + nw) // 2, im.height))
+    else:
+        nh = int(im.width / tr)
+        im = im.crop((0, (im.height - nh) // 2, im.width, (im.height + nh) // 2))
+    return im.resize((w, h), Image.LANCZOS)
+
+
+def thumbnail(name_or_path: str, w: int = 224, h: int = 126) -> str:
+    """A small cached JPEG of a wallpaper.
+
+    Deliberately does NOT go through materialise(): decoding a 6000px HEIC to
+    a full-resolution PNG just to show a 224px tile filled hundreds of
+    megabytes of cache the first time the picker was opened. Each format is
+    routed to whatever can downscale it cheaply.
+    """
+    from PIL import Image
+    entry = resolve(name_or_path)
+    dst = Path(cache_dir()) / "thumbs" / f"{_safe(entry['name'])}_{w}x{h}.jpg"
+    if dst.exists() and dst.stat().st_size > 0:
+        return str(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    src = entry["source"]
+    suffix = Path(src).suffix.lower()
+
+    # already a normal image: Pillow can decode straight to roughly the size
+    if suffix in DIRECT_SUFFIXES:
+        im = Image.open(src)
+        im.draft("RGB", (w * 2, h * 2))          # JPEG decodes downscaled
+        _cover_resize(im, w, h).save(dst, "JPEG", quality=82)
+        return str(dst)
+
+    # animated wallpaper: one scaled frame out of the middle of the day
+    if entry["kind"] == "dynamic":
+        try:
+            dur = probe(src)["duration"] or 1.0
+        except ZoomcutError:
+            dur = 1.0
+        p = run([ffmpeg(), "-nostdin", "-v", "error", "-ss",
+                 f"{dur * DYNAMIC_FRAME_RATIO:.2f}", "-i", src, "-frames:v", "1",
+                 "-vf", f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+                        f"crop={w}:{h}", "-q:v", "4", "-y", str(dst)])
+        if p.returncode == 0 and dst.exists() and dst.stat().st_size > 0:
+            return str(dst)
+
+    # HEIC: sips resamples as it decodes. ffmpeg refuses a simple -vf on
+    # Apple's tiled HEICs ("simple and complex filtering cannot be used
+    # together"), so it only gets a turn without one.
+    if shutil.which("sips"):
+        tmp = dst.with_suffix(".src.jpg")
+        p = run(["sips", "-s", "format", "jpeg", "-Z", str(max(w, h) * 2),
+                 src, "--out", str(tmp)])
+        if p.returncode == 0 and tmp.exists():
+            _cover_resize(Image.open(tmp), w, h).save(dst, "JPEG", quality=82)
+            tmp.unlink(missing_ok=True)
+            return str(dst)
+        tmp.unlink(missing_ok=True)
+    tmp = dst.with_suffix(".src.png")
+    p = run([ffmpeg(), "-nostdin", "-v", "error", "-i", src, "-frames:v", "1",
+             "-y", str(tmp)])
+    if p.returncode == 0 and tmp.exists():
+        _cover_resize(Image.open(tmp), w, h).save(dst, "JPEG", quality=82)
+        tmp.unlink(missing_ok=True)
+        return str(dst)
+    tmp.unlink(missing_ok=True)
+    try:
+        _cover_resize(Image.open(src), w, h).save(dst, "JPEG", quality=82)
+        return str(dst)
+    except Exception as e:
+        raise ZoomcutError(f"could not make a thumbnail for {src}: {e}")

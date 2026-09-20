@@ -85,28 +85,9 @@ def _rekey(pj: dict) -> dict:
     return pj
 
 
-_THUMBS = os.path.join(cache_dir(), "thumbs")
-
-
 def _thumb(name: str, w: int = 224, h: int = 126) -> str:
     """Small JPEG of a wallpaper, generated once and cached."""
-    from PIL import Image
-    safe = "".join(c if c.isalnum() else "_" for c in name)[:80]
-    os.makedirs(_THUMBS, exist_ok=True)
-    dst = os.path.join(_THUMBS, f"{safe}_{w}x{h}.jpg")
-    if os.path.exists(dst) and os.path.getsize(dst) > 0:
-        return dst
-    src = wallpapers.materialise(name)
-    im = Image.open(src).convert("RGB")
-    tr, ir = w / h, im.width / im.height
-    if ir > tr:
-        nw = int(im.height * tr)
-        im = im.crop(((im.width - nw) // 2, 0, (im.width + nw) // 2, im.height))
-    else:
-        nh = int(im.width / tr)
-        im = im.crop((0, (im.height - nh) // 2, im.width, (im.height + nh) // 2))
-    im.resize((w, h), Image.LANCZOS).save(dst, "JPEG", quality=82)
-    return dst
+    return wallpapers.thumbnail(name, w, h)
 
 
 class Handler(BaseHTTPRequestHandler):

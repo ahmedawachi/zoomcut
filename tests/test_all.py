@@ -281,19 +281,52 @@ try:
 except ZoomcutError:
     check("missing source fails loudly", True)
 
-# banding: the background is static, so it must not posterise
+# Banding: the background never moves, so anything h264 posterises there
+# sits on screen for the whole clip. An absolute pixel threshold is not
+# portable - x264 builds differ, and a photo wallpaper self-dithers while a
+# gradient does not - so this renders the SAME gradient twice on THIS
+# encoder, with and without the dither, and checks the dither earns its keep.
 import numpy as np
-raw = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-ss", "0.5", "-i", out,
-                      "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
-                     capture_output=True).stdout
-g = np.frombuffer(raw[:1280 * 720], dtype=np.uint8).reshape(720, 1280)
-runs = []
-for row in g[100:600:9, 0:120]:
-    idx = np.flatnonzero(np.diff(row.astype(np.int16)) != 0)
-    if len(idx) > 1:
-        runs.append(np.diff(idx).mean())
-check("background is dithered (no visible banding)", (np.mean(runs) if runs else 99) < 12,
-      f"mean flat-run {np.mean(runs) if runs else -1:.1f}px")
+import zoomcut.render as _R
+
+GRADIENT_STYLE = {"background": {"type": "gradient", "dim": 0.12, "blur": 0,
+                                 "gradient": {"from": "#3F37C9", "to": "#8C87DF",
+                                              "p0": [0, 0], "p1": [1, 1]}}}
+
+
+def flat_runs(path, w=1280, h=720):
+    """Mean length of constant-luma runs in the background strip, in pixels."""
+    raw = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-ss", "0.5", "-i", path,
+                          "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                         capture_output=True).stdout
+    g = np.frombuffer(raw[:w * h], dtype=np.uint8).reshape(h, w)
+    runs = []
+    for row in g[100:600:9, 0:120]:
+        idx = np.flatnonzero(np.diff(row.astype(np.int16)) != 0)
+        if len(idx) > 1:
+            runs.append(np.diff(idx).mean())
+    return float(np.mean(runs)) if runs else float("inf")
+
+
+_band = {}
+_dither_was = _R.DITHER
+for _mode, _amp in (("dithered", _dither_was), ("control", 0.0)):
+    _R.DITHER = _amp
+    _pj = new_project(clips["moving box"], keyframes(sh), sh, style=GRADIENT_STYLE,
+                      output={"width": 1280, "height": 720, "fps": 30,
+                              "crf": 20, "preset": "veryfast"})
+    _out = os.path.join(TMP, f"band-{_mode}.mp4")
+    render(_pj, _out)
+    _band[_mode] = flat_runs(_out)
+_R.DITHER = _dither_was
+
+if _band["control"] < 15:
+    skip("background dithering measurably reduces banding",
+         f"this encoder barely bands here (control {_band['control']:.1f}px)")
+else:
+    check("background dithering measurably reduces banding",
+          _band["dithered"] < _band["control"] * 0.6,
+          f"dithered {_band['dithered']:.1f}px vs undithered {_band['control']:.1f}px")
 
 # ==========================================================================
 section("8 · web app (served on a throwaway port, shut down after)")
@@ -482,6 +515,27 @@ try:
         check("linux: unknown screen size is a clear error", "region" in str(e).lower())
 finally:
     winlist.find, winlist.screen_size = _real_find, _real_size
+
+# thumbnails must never decode a full-resolution copy: doing so filled
+# hundreds of MB of cache the first time the wallpaper picker was opened
+if wallpapers.discover():
+    import shutil as _sh
+    from zoomcut.util import cache_dir as _cd
+    _sh.rmtree(os.path.join(_cd(), "thumbs"), ignore_errors=True)
+    _name = wallpapers.discover()[0]["name"]
+    _t = wallpapers.thumbnail(_name)
+    from PIL import Image as _Im
+    check("a wallpaper thumbnail is the size asked for", _Im.open(_t).size == (224, 126))
+    check("a thumbnail is small on disk", os.path.getsize(_t) < 120_000,
+          f"{os.path.getsize(_t)} bytes")
+    check("thumbnailing leaves no half-converted files",
+          not [f for f in os.listdir(os.path.dirname(_t)) if ".src." in f])
+else:
+    skip("thumbnail checks", "no wallpapers on this machine")
+
+from zoomcut.cli import main as _cli
+_rc = _cli(["doctor"])
+check("doctor runs and reports a status", _rc in (0, 1), f"exit {_rc}")
 
 check("backend name matches the platform", recorder.backend_name() in
       ("screencapture", "gdigrab", "x11grab"), recorder.backend_name())

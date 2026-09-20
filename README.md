@@ -36,6 +36,18 @@ Pick a window. Hit record. Hit stop. That's the whole workflow.
 <img src="docs/screenshot-app.png" alt="The Zoomcut app: capture, auto-cut, look, preview and the shot timeline" width="100%">
 </div>
 
+Zoomcut is an open-source **screen recorder with automatic zoom** for **macOS, Windows and
+Linux** — a local app for making product demos, tutorials and bug reports that look edited,
+without opening a video editor.
+
+- **Records a window, a display or a region** — native capture on each platform
+- **Finds the moments worth zooming into** and holds still the rest of the time
+- **Puts your recording on your desktop wallpaper** with rounded corners and a soft shadow
+- **Spring-driven camera moves** that settle like physics, not like a tween
+- **Edit any shot** in a visual timeline, or hand-edit the plain-JSON project
+- **Exports 1080p / 1440p / 4K** h.264, ready to drop into a PR or a release note
+- **Runs entirely on your machine** — no account, no upload, no telemetry
+
 ## Contents
 
 - [Why](#why)
@@ -63,50 +75,112 @@ leaves the frame alone.
 
 ## Requirements
 
+Python is only needed if you install from pip or source — the downloadable app bundles it.
+Everything else is one package:
+
 |  | |
 |---|---|
 | **OS** | macOS 13+, Windows 10+, or Linux with X11 |
-| **ffmpeg** | `brew install ffmpeg` · `winget install Gyan.FFmpeg` · `sudo apt install ffmpeg` |
-| **Python** | 3.10+ with `numpy` and `Pillow` — *not needed if you download a release* |
+| **ffmpeg** | required, see step 1 below |
+| **Python** | 3.10+ with `numpy` and `Pillow` — *not needed for the download* |
 
-Extras per platform:
-
-| | capture backend | window picking | notes |
-|---|---|---|---|
-| **macOS** | `screencapture` | built in | needs Screen Recording permission |
-| **Windows** | ffmpeg `gdigrab` | built in | — |
-| **Linux** | ffmpeg `x11grab` | needs `wmctrl` or `xdotool` | X11 only, see [Platform notes](#platform-notes) |
-
-> **macOS permission**
-> System Settings → Privacy & Security → Screen & System Audio Recording → enable whatever runs
-> Zoomcut (your terminal, or Zoomcut itself), then restart it. The app shows a green dot when
-> it's good.
-
-No background agent, no login item, no telemetry. Nothing leaves your machine — the app binds to
+Nothing runs in the background, there is no account, and nothing is uploaded: the app binds to
 `127.0.0.1` and only serves files it produced itself.
 
 ## Install
 
-**Download a release** — no Python needed. Grab the build for your machine from
-[Releases](https://github.com/ahmedawachi/zoomcut/releases/latest), unpack it, and run `zoomcut`
-(`zoomcut.exe` on Windows). It starts in well under a second and prints the address to open.
-Builds are published for **Apple Silicon macOS, Windows x86_64 and Linux x86_64**; on an Intel
-Mac, install with pip or build your own with `packaging/build.sh`.
+Three steps.
 
-**With pip:**
+### 1 · Install ffmpeg
+
+Zoomcut uses ffmpeg to read and write video. One line for your platform:
+
+| platform | command |
+|---|---|
+| **macOS** | `brew install ffmpeg` |
+| **Windows** | `winget install Gyan.FFmpeg` |
+| **Debian / Ubuntu** | `sudo apt install ffmpeg` |
+| **Fedora** | `sudo dnf install ffmpeg` |
+| **Arch** | `sudo pacman -S ffmpeg` |
+
+Already have it somewhere unusual? Point Zoomcut at it: `ZOOMCUT_FFMPEG=/path/to/ffmpeg`.
+
+### 2 · Get Zoomcut — pick one
+
+<table>
+<tr><th width="33%">A · Download the app</th><th width="33%">B · pip</th><th width="33%">C · From source</th></tr>
+<tr valign="top">
+<td>
+
+*Easiest. No Python.*
+
+Grab your build from
+[**Releases**](https://github.com/ahmedawachi/zoomcut/releases/latest),
+unpack it, and run the `zoomcut`
+binary inside.
+
+Available for Apple Silicon macOS,
+Windows x86_64 and Linux x86_64.
+
+</td><td>
 
 ```bash
-pip install zoomcut        # or: pip install git+https://github.com/ahmedawachi/zoomcut
-zoomcut
+pip install zoomcut
 ```
 
-**From a clone:**
+Works everywhere, including
+Intel Macs.
+
+</td><td>
 
 ```bash
-git clone https://github.com/ahmedawachi/zoomcut.git
-cd zoomcut && pip install numpy pillow
+git clone https://github.com/\
+ahmedawachi/zoomcut.git
+cd zoomcut
+pip install numpy pillow
 ./zoomcut-cli
 ```
+
+</td></tr></table>
+
+> **macOS, first run:** the download is not signed by Apple, so right-click the `zoomcut`
+> binary → **Open** the first time, instead of double-clicking it.
+
+### 3 · Check it, then run it
+
+```bash
+zoomcut doctor     # confirms ffmpeg, capture, window picking and where files will go
+zoomcut            # opens the app at http://127.0.0.1:8765
+```
+
+`doctor` prints a line per requirement and tells you exactly what to install if something is
+missing:
+
+```
+Zoomcut 1.1.0 on macOS
+
+  OK    ffmpeg  —  /opt/homebrew/bin/ffmpeg
+  OK    ffprobe  —  /opt/homebrew/bin/ffprobe
+  OK    screen recording (screencapture)
+  OK    window picking  —  10 window(s) you could record
+  OK    backgrounds  —  19 wallpaper(s)
+  OK    output folder  —  /Users/you/Movies/Zoomcut
+
+Everything Zoomcut needs is here. Run `zoomcut` to start.
+```
+
+### One-time extras
+
+**macOS — allow screen recording.** System Settings → Privacy & Security → **Screen & System
+Audio Recording** → enable whatever runs Zoomcut (your terminal, or the Zoomcut app), then
+**restart it**. `zoomcut doctor` and the app's status dot both go green once it is granted.
+
+**Linux — window picking.** Listing windows needs one small helper:
+`sudo apt install wmctrl` (or `xdotool`). Without it, record a region or the whole display
+instead. Zoomcut captures through **X11**; on a Wayland session log in with Xorg — it will tell
+you rather than hand you a black video.
+
+**Windows — nothing extra.**
 
 ## The app
 
@@ -130,6 +204,7 @@ Finished files go to `~/Movies/Zoomcut` (macOS), `%USERPROFILE%\Videos\Zoomcut` 
 ## The command line
 
 ```bash
+zoomcut doctor                                   # is everything installed?
 zoomcut windows                                  # what you can record
 zoomcut shoot --mode window --window 2375        # record → auto-cut → render
 zoomcut auto demo.mov                            # existing recording → finished video
@@ -274,7 +349,7 @@ python3 tests/test_all.py --quick     # skips wallpapers, window list, live reco
 python3 tools/sim_platform.py linux   # run the suite as if this were Linux
 ```
 
-**136 checks.** `sim_platform.py` flips the platform flags so the Windows and Linux
+**140 checks.** `sim_platform.py` flips the platform flags so the Windows and Linux
 branches of our own logic can be exercised from any machine — it is how the "this machine has no
 wallpapers installed" assumption was caught before it reached a server image. CI then runs the
 suite for real on **macOS, Windows and Linux**, and on Linux and Windows it goes
@@ -295,6 +370,8 @@ Regenerate the documentation images with `python3 tools/make_docs.py` and the br
 (`ZOOMCUT_DEMO=1`), so nobody's real screen ends up in the repository.
 
 ## Troubleshooting
+
+Run `zoomcut doctor` first — it names anything missing and how to install it.
 
 | Symptom | Fix |
 |---|---|
