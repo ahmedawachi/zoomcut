@@ -1,0 +1,5 @@
+#!/bin/bash
+# Zoomcut launcher - works from any directory.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="$HERE${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m zoomcut "$@"
