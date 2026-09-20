@@ -33,11 +33,27 @@ class Recording:
     proc: subprocess.Popen | None = None
     backend: str = ""
     wall: float = 0.0
+    errlog: str | None = None
     meta: dict = field(default_factory=dict)
 
     @property
     def running(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
+
+    def errors(self) -> str:
+        """Whatever the recorder printed, however it was captured."""
+        if self.errlog and os.path.exists(self.errlog):
+            try:
+                with open(self.errlog, errors="replace") as f:
+                    return f.read()
+            except OSError:
+                return ""
+        if self.proc is not None and self.proc.stderr is not None:
+            try:
+                return (self.proc.stderr.read() or b"").decode(errors="replace")
+            except Exception:
+                return ""
+        return ""
 
 
 def backend_name() -> str:
@@ -134,7 +150,7 @@ def _start_macos(path, mode, region, display, window_id, cursor, clicks, audio, 
     else:
         cmd += ["-i", "-Jvideo"]
     cmd.append(path)
-    return path, popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE), cmd
+    return path, popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE), cmd, None
 
 
 # ---------------------------------------------------------------- ffmpeg backends
@@ -178,11 +194,17 @@ def _cmd_windows(path, mode, region, display, window_id, cursor, limit):
     return _ffmpeg_record_cmd(path, "gdigrab", inp, size, offset, cursor, limit)
 
 
+def _open_errlog(path: str):
+    log = path + ".log"
+    return log, open(log, "wb")
+
+
 def _start_windows(path, mode, region, display, window_id, cursor, clicks, audio, limit):
     path = _prepare_path(path, ".mkv")
     cmd = _cmd_windows(path, mode, region, display, window_id, cursor, limit)
+    log, fh = _open_errlog(path)
     return path, popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.PIPE), cmd
+                       stderr=fh), cmd, log
 
 
 def _cmd_linux(path, mode, region, display, window_id, cursor, limit):
@@ -209,8 +231,9 @@ def _cmd_linux(path, mode, region, display, window_id, cursor, limit):
 def _start_linux(path, mode, region, display, window_id, cursor, clicks, audio, limit):
     path = _prepare_path(path, ".mkv")
     cmd = _cmd_linux(path, mode, region, display, window_id, cursor, limit)
+    log, fh = _open_errlog(path)
     return path, popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.PIPE), cmd
+                       stderr=fh), cmd, log
 
 
 _BACKENDS = {"macOS": _start_macos, "Windows": _start_windows, "Linux": _start_linux}
@@ -245,10 +268,11 @@ def start(path: str, mode: str = "window", region=None, display: int = 1,
     fn = _BACKENDS.get(platform_name())
     if fn is None:
         raise ZoomcutError(f"screen recording is not supported on {platform_name()}")
-    path, proc, cmd = fn(path, mode, region, display, window_id, cursor, clicks, audio, limit)
+    path, proc, cmd, errlog = fn(path, mode, region, display, window_id,
+                                 cursor, clicks, audio, limit)
 
     rec = Recording(path=path, mode=mode, started=time.time(), proc=proc,
-                    backend=backend_name(),
+                    backend=backend_name(), errlog=errlog,
                     meta={"cmd": cmd, "cursor": cursor, "clicks": clicks,
                           "window_id": window_id, "region": region, "display": display})
     # an ffmpeg backend that cannot open its input dies immediately; surface
@@ -256,7 +280,7 @@ def start(path: str, mode: str = "window", region=None, display: int = 1,
     if not IS_MAC:
         time.sleep(0.7)
         if proc.poll() is not None:
-            err = (proc.stderr.read() or b"").decode(errors="replace").strip()
+            err = rec.errors().strip()
             if mode == "window" and IS_WIN:
                 # matching by window title failed; its rectangle always works
                 w = winlist.find(window_id)
@@ -297,12 +321,13 @@ def stop(rec: Recording, pad: bool = True, timeout: float = 30.0) -> str:
             break
         time.sleep(0.2)
     if not os.path.exists(rec.path) or os.path.getsize(rec.path) == 0:
-        err = ""
+        raise ZoomcutError(
+            f"recording produced no file. The recorder said:\n{rec.errors()[:800]}")
+    if rec.errlog and os.path.exists(rec.errlog):
         try:
-            err = (rec.proc.stderr.read() or b"").decode(errors="replace")
-        except Exception:
+            os.remove(rec.errlog)
+        except OSError:
             pass
-        raise ZoomcutError(f"recording produced no file. The recorder said:\n{err[:800]}")
     if pad and IS_MAC:
         pad_to_wall(rec.path, rec.wall)
     return rec.path

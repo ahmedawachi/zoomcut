@@ -111,6 +111,8 @@ def cmd_record(a):
     path = recorder.stop(rec)
     from .util import probe
     info = probe(path)
+    # the backend picks the container, so hand the real path to whoever is next
+    a.recorded_path = path
     print(f"\nsaved {path}  ({info['width']}x{info['height']}, {info['duration']:.2f}s)")
     return 0
 
@@ -167,7 +169,7 @@ def cmd_shoot(a):
     rc = cmd_record(a)
     if rc:
         return rc
-    a.source = os.path.splitext(a.output)[0] + ".mov"
+    a.source = getattr(a, "recorded_path", None) or a.output
     a.output = a.final or os.path.splitext(a.source)[0] + ".zoomcut.mp4"
     return cmd_auto(a)
 
