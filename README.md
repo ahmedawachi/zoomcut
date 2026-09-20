@@ -90,6 +90,8 @@ No background agent, no login item, no telemetry. Nothing leaves your machine â€
 **Download a release** â€” no Python needed. Grab the build for your machine from
 [Releases](https://github.com/ahmedawachi/zoomcut/releases/latest), unpack it, and run `zoomcut`
 (`zoomcut.exe` on Windows). It starts in well under a second and prints the address to open.
+Builds are published for **Apple Silicon macOS, Windows x86_64 and Linux x86_64**; on an Intel
+Mac, install with pip or build your own with `packaging/build.sh`.
 
 **With pip:**
 

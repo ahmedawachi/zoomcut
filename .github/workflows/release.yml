@@ -20,10 +20,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14,       name: macos-arm64,   asset: zoomcut-macos-arm64 }
-          - { os: macos-13,       name: macos-x86_64,  asset: zoomcut-macos-x86_64 }
+          # No Intel-macOS leg: the macos-13 runner label sits queued for
+          # hours, which blocks the whole release. Intel Macs install with
+          # pip, or build locally with packaging/build.sh.
+          - { os: macos-14,       name: macos-arm64,    asset: zoomcut-macos-arm64 }
           - { os: windows-latest, name: windows-x86_64, asset: zoomcut-windows-x86_64 }
-          - { os: ubuntu-22.04,   name: linux-x86_64,  asset: zoomcut-linux-x86_64 }
+          - { os: ubuntu-22.04,   name: linux-x86_64,   asset: zoomcut-linux-x86_64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
