@@ -13,11 +13,24 @@ from .analyze import analyze
 from .director import DirectorConfig, plan, keyframes, Shot
 from .project import new_project, save, load, import_style_preset, PRESETS, _deep_update
 from .render import render, still
-from .util import ZoomcutError, probe
-from .windows import pickable, WindowListError
+from .util import ZoomcutError, probe, output_dir, platform_name, have, cache_dir
+from .winlist import pickable, WindowListError
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
-OUT_DIR = os.path.expanduser("~/Movies/Zoomcut")
+# ZOOMCUT_DEMO=1 serves a fixed window list instead of the real one, so the
+# documentation screenshots never contain anybody's actual window titles.
+DEMO = os.environ.get("ZOOMCUT_DEMO") == "1"
+DEMO_WINDOWS = [
+    {"id": 101, "app": "Safari", "title": "Acme Dashboard", "x": 0, "y": 0,
+     "width": 1440, "height": 900, "layer": 0, "pid": 0},
+    {"id": 102, "app": "Terminal", "title": "~/projects/acme", "x": 0, "y": 0,
+     "width": 1100, "height": 720, "layer": 0, "pid": 0},
+    {"id": 103, "app": "Code", "title": "server.py — acme-api", "x": 0, "y": 0,
+     "width": 1600, "height": 1000, "layer": 0, "pid": 0},
+    {"id": 104, "app": "Figma", "title": "Design system", "x": 0, "y": 0,
+     "width": 1512, "height": 945, "layer": 0, "pid": 0},
+]
+OUT_DIR = output_dir()
 
 
 class Session:
@@ -70,6 +83,30 @@ def _rekey(pj: dict) -> dict:
     if shots:
         pj["camera"]["keys"] = keyframes(shots)
     return pj
+
+
+_THUMBS = os.path.join(cache_dir(), "thumbs")
+
+
+def _thumb(name: str, w: int = 224, h: int = 126) -> str:
+    """Small JPEG of a wallpaper, generated once and cached."""
+    from PIL import Image
+    safe = "".join(c if c.isalnum() else "_" for c in name)[:80]
+    os.makedirs(_THUMBS, exist_ok=True)
+    dst = os.path.join(_THUMBS, f"{safe}_{w}x{h}.jpg")
+    if os.path.exists(dst) and os.path.getsize(dst) > 0:
+        return dst
+    src = wallpapers.materialise(name)
+    im = Image.open(src).convert("RGB")
+    tr, ir = w / h, im.width / im.height
+    if ir > tr:
+        nw = int(im.height * tr)
+        im = im.crop(((im.width - nw) // 2, 0, (im.width + nw) // 2, im.height))
+    else:
+        nh = int(im.width / tr)
+        im = im.crop((0, (im.height - nh) // 2, im.width, (im.height + nh) // 2))
+    im.resize((w, h), Image.LANCZOS).save(dst, "JPEG", quality=82)
+    return dst
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -157,6 +194,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
                 return
             if u.path == "/api/windows":
+                if DEMO:
+                    return self._json({"windows": DEMO_WINDOWS})
                 try:
                     return self._json({"windows": pickable()})
                 except WindowListError as e:
@@ -164,6 +203,22 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/wallpapers":
                 return self._json({"wallpapers": [w["name"] for w in wallpapers.discover()],
                                    "default": wallpapers.default_name()})
+
+            if u.path == "/api/wallpaper-thumb":
+                name = (q.get("name") or [""])[0]
+                try:
+                    path = _thumb(name)
+                except Exception:
+                    return self._json({"error": "no thumbnail"}, 404)
+                with open(path, "rb") as f:
+                    body = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "max-age=86400")
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if u.path == "/api/state":
                 rec = S.rec
                 return self._json({
@@ -173,6 +228,11 @@ class Handler(BaseHTTPRequestHandler):
                     "progress": S.progress,
                     "permission": list(recorder.available()),
                     "outDir": OUT_DIR,
+                    "platform": platform_name(),
+                    "backend": recorder.backend_name(),
+                    "ffmpeg": have("ffmpeg"),
+                    "modes": list(recorder.MODES) if platform_name() == "macOS"
+                             else [m for m in recorder.MODES if m != "interactive"],
                 })
             if u.path == "/api/project":
                 return self._json({"project": S.project})

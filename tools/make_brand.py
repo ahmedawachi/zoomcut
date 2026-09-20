@@ -124,9 +124,34 @@ def icon(size=512) -> Image.Image:
     return img
 
 
+def app_icons() -> None:
+    """Platform icon files for the packaged executables."""
+    import shutil, subprocess, tempfile
+    base = icon(1024)
+    ico = os.path.join(OUT, "zoomcut.ico")
+    base.save(ico, sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
+    png = os.path.join(OUT, "zoomcut.png")
+    base.resize((512, 512), Image.LANCZOS).save(png)
+    if shutil.which("iconutil"):                       # macOS only
+        tmp = tempfile.mkdtemp()
+        iconset = os.path.join(tmp, "zoomcut.iconset")
+        os.makedirs(iconset, exist_ok=True)
+        for size in (16, 32, 64, 128, 256, 512):
+            base.resize((size, size), Image.LANCZOS).save(
+                os.path.join(iconset, f"icon_{size}x{size}.png"))
+            base.resize((size * 2, size * 2), Image.LANCZOS).save(
+                os.path.join(iconset, f"icon_{size}x{size}@2x.png"))
+        out = os.path.join(OUT, "zoomcut.icns")
+        if subprocess.run(["iconutil", "-c", "icns", iconset, "-o", out]).returncode == 0:
+            print("wrote docs/zoomcut.icns")
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("wrote docs/zoomcut.ico, docs/zoomcut.png")
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     banner().save(os.path.join(OUT, "banner.png"))
     icon().save(os.path.join(OUT, "logo.png"))
     mark(512).save(os.path.join(OUT, "mark.png"))
+    app_icons()
     print("wrote docs/banner.png, docs/logo.png, docs/mark.png")

@@ -3,29 +3,38 @@
 <img src="docs/banner.png" alt="Zoomcut — record your screen, get a video that looks edited" width="100%">
 
 Zoomcut watches what you actually did — typed into a box, opened a panel, got a result back —
-and moves a virtual camera to match. Your recording floats on your macOS wallpaper with a soft
+and moves a virtual camera to match. Your recording floats on your desktop wallpaper with a soft
 shadow, the camera pushes in where it matters and **holds perfectly still where it doesn't**.
 
 **You never place a keyframe.**
 
 [![tests](https://github.com/ahmedawachi/zoomcut/actions/workflows/tests.yml/badge.svg)](https://github.com/ahmedawachi/zoomcut/actions/workflows/tests.yml)
-[![platform](https://img.shields.io/badge/platform-macOS-000?logo=apple&logoColor=white)](#requirements)
+[![release](https://img.shields.io/github/v/release/ahmedawachi/zoomcut?color=6c63ff&label=release)](https://github.com/ahmedawachi/zoomcut/releases/latest)
+[![platforms](https://img.shields.io/badge/macOS%20·%20Windows%20·%20Linux-000?logo=apple&logoColor=white)](#requirements)
 [![python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](#requirements)
 [![license](https://img.shields.io/badge/license-MIT-6c63ff)](LICENSE)
-[![dependencies](https://img.shields.io/badge/deps-numpy%20%C2%B7%20Pillow%20%C2%B7%20ffmpeg-informational)](#requirements)
+
+</div>
+
+---
+
+<div align="center">
+
+<img src="docs/example.png" alt="The same frame, before and after Zoomcut" width="100%">
 
 </div>
 
 ---
 
 ```bash
-git clone https://github.com/ahmedawachi/zoomcut.git
-cd zoomcut && ./zoomcut-cli ui
+zoomcut            # opens the app in your browser
 ```
 
 Pick a window. Hit record. Hit stop. That's the whole workflow.
 
----
+<div align="center">
+<img src="docs/screenshot-app.png" alt="The Zoomcut app: capture, auto-cut, look, preview and the shot timeline" width="100%">
+</div>
 
 ## Contents
 
@@ -35,7 +44,7 @@ Pick a window. Hit record. Hit stop. That's the whole workflow.
 - [The app](#the-app)
 - [The command line](#the-command-line)
 - [How the camera decides](#how-the-camera-decides)
-- [Two macOS traps it handles for you](#two-macos-traps-it-handles-for-you)
+- [Platform notes](#platform-notes)
 - [Project files](#project-files)
 - [Tests](#tests)
 - [Troubleshooting](#troubleshooting)
@@ -54,54 +63,67 @@ leaves the frame alone.
 
 ## Requirements
 
-| | |
+|  | |
 |---|---|
-| **OS** | macOS 13+ (built and tested on macOS 26 "Tahoe") |
-| **ffmpeg** | `brew install ffmpeg` |
-| **Python** | 3.10+ with `numpy` and `Pillow` |
-| **Permission** | Screen Recording, for whatever launches Zoomcut |
+| **OS** | macOS 13+, Windows 10+, or Linux with X11 |
+| **ffmpeg** | `brew install ffmpeg` · `winget install Gyan.FFmpeg` · `sudo apt install ffmpeg` |
+| **Python** | 3.10+ with `numpy` and `Pillow` — *not needed if you download a release* |
 
-> **Screen Recording permission**
-> System Settings → Privacy & Security → Screen & System Audio Recording → enable your terminal
-> (Terminal, iTerm, VS Code…), then **restart that app**. The UI shows a green dot when it's good.
+Extras per platform:
 
-No menu-bar agent, no login item, no telemetry. Nothing leaves your machine — the web app is
-bound to `127.0.0.1` and only serves files it produced itself.
+| | capture backend | window picking | notes |
+|---|---|---|---|
+| **macOS** | `screencapture` | built in | needs Screen Recording permission |
+| **Windows** | ffmpeg `gdigrab` | built in | — |
+| **Linux** | ffmpeg `x11grab` | needs `wmctrl` or `xdotool` | X11 only, see [Platform notes](#platform-notes) |
+
+> **macOS permission**
+> System Settings → Privacy & Security → Screen & System Audio Recording → enable whatever runs
+> Zoomcut (your terminal, or Zoomcut itself), then restart it. The app shows a green dot when
+> it's good.
+
+No background agent, no login item, no telemetry. Nothing leaves your machine — the app binds to
+`127.0.0.1` and only serves files it produced itself.
 
 ## Install
 
-**From a clone** — nothing to install beyond the dependencies:
+**Download a release** — no Python needed. Grab the build for your machine from
+[Releases](https://github.com/ahmedawachi/zoomcut/releases/latest), unpack it, and run `zoomcut`
+(`zoomcut.exe` on Windows). It starts in well under a second and prints the address to open.
+
+**With pip:**
+
+```bash
+pip install zoomcut        # or: pip install git+https://github.com/ahmedawachi/zoomcut
+zoomcut
+```
+
+**From a clone:**
 
 ```bash
 git clone https://github.com/ahmedawachi/zoomcut.git
-cd zoomcut
-pip3 install numpy pillow
-./zoomcut-cli ui
-```
-
-**As a package**, to get a `zoomcut` command anywhere:
-
-```bash
-pip3 install -e .
-zoomcut ui
+cd zoomcut && pip install numpy pillow
+./zoomcut-cli
 ```
 
 ## The app
 
 ```bash
-zoomcut ui            # opens http://127.0.0.1:8765
+zoomcut              # same as: zoomcut ui
 ```
 
-Four steps, top to bottom:
+Opens `http://127.0.0.1:8765`.
 
 | Step | What you do |
 |---|---|
-| **1 · Capture** | Pick **a window** (every real window, listed with its size), a display, a region, or let macOS ask. Record → Stop. |
-| **2 · Auto-cut** | The shot plan appears as a table. Every number is editable; *Apply edits* re-cuts the camera. |
-| **3 · Look** | Background wallpaper, dim, blur, padding, output size, fps. |
-| **4 · Preview & export** | Scrub to any moment for a still, render a 720p draft, or export at full quality. |
+| **1 · Capture** | Pick **a window** (searchable list of every real window), a display, or a region. Record → Stop. |
+| **2 · Source** | Or drop a recording you already have anywhere on the page. |
+| **3 · Look** | Pick a wallpaper from your own desktop pictures, or a gradient. Dim, blur and padding are sliders. |
+| **4 · Preview** | Scrub anywhere for a live composited frame, render a 720p draft, or export at full quality. |
+| **5 · Shots** | The camera plan as a timeline — bar height is zoom. Click a shot to retune it; the render follows. |
 
-Finished files land in `~/Movies/Zoomcut`.
+Finished files go to `~/Movies/Zoomcut` (macOS), `%USERPROFILE%\Videos\Zoomcut` (Windows) or
+`~/Videos/Zoomcut` (Linux).
 
 ## The command line
 
@@ -123,7 +145,7 @@ zoomcut wallpapers
 
 | flag | default | what it does |
 |---|---|---|
-| `--background` | your Mac's wallpaper | wallpaper name, an image path, `gradient` or `color` |
+| `--background` | your desktop wallpaper | wallpaper name, an image path, `gradient` or `color` |
 | `--dim` | `0.12` | darken the background, `0`–`1` |
 | `--blur` | `0` | soften the background, in pixels |
 | `--padding` | `0.0702` | margin around the window, as a fraction of the short edge |
@@ -146,12 +168,12 @@ zoomcut wallpapers
 
 | flag | what it does |
 |---|---|
-| `--mode` | `window`, `display`, `region` or `interactive` |
+| `--mode` | `window`, `display`, `region`, or `interactive` (macOS only) |
 | `--window` | window id from `zoomcut windows` |
-| `--region` | `x,y,w,h` in points |
+| `--region` | `x,y,w,h` |
 | `--display` | display number, `1` is main |
 | `--seconds` | stop automatically after N seconds |
-| `--no-cursor` / `--clicks` | hide the pointer / highlight mouse clicks |
+| `--no-cursor` / `--clicks` | hide the pointer / highlight clicks (clicks: macOS only) |
 
 </details>
 
@@ -180,7 +202,7 @@ recording ──▶ decode small + grey at 20fps
 4. **Reveals.** It pulls back to the *whole, uncropped* window slightly **before** a cut lands, so
    a change is never revealed half-framed.
 5. **Restraint.** Shots below `--min-shot` are merged, near-identical neighbours fuse, and zooms
-   that would be too timid to notice are dropped. It opens and closes on the full window.
+   too timid to notice are dropped. It opens and closes on the full window.
 
 Moves are integrated through a **damped spring** (ζ ≈ 0.80) rather than an easing curve, so they
 settle like physics instead of like a tween.
@@ -190,23 +212,30 @@ gradient or sky will otherwise band badly in 8-bit 4:2:0 — and because the bac
 moves, that banding would sit on screen for the entire clip. Measured on a real export, this
 takes flat-runs in the sky from **83px down to 2.4px**.
 
-## Two macOS traps it handles for you
+## Platform notes
 
-Both are handled automatically. They're documented because they will confuse you if you ever
-script `screencapture` yourself.
+Each is handled automatically; they're written down because they'll confuse you if you ever
+script these tools yourself.
 
-**1. Recordings get silently truncated.**
+**macOS — recordings get silently truncated.**
 `screencapture -v` writes variable frame rate and ends the file at the *last on-screen change*.
 Record 10 seconds that finish on a still screen and the file honestly claims about 6. Zoomcut
-measures wall-clock time and clones the final frame to match, so the end of your demo never
-quietly disappears.
+measures wall-clock time and clones the final frame to match.
 
-**2. It refuses to write dot-files — and still exits 0.**
+**macOS — it refuses to write dot-files, and still exits 0.**
 `screencapture -x -t png /tmp/.probe.png` writes nothing and reports success. Output names
-beginning with `.` are rejected up front rather than failing mysteriously later.
+starting with `.` are rejected up front. Window capture also passes `-o`, so the window's own
+drop shadow isn't baked in and Zoomcut's shadow is the only one in frame.
 
-Window capture also passes `-o`, so the window's own drop shadow isn't baked in and Zoomcut's
-shadow is the only one in the frame.
+**Windows.** Capture is ffmpeg's `gdigrab`. A window is grabbed by title, which follows it as it
+moves; if the title is empty or ffmpeg can't match it, Zoomcut falls back to the window's
+rectangle automatically. The window list comes from `EnumWindows` with DWM's extended frame
+bounds, so the invisible resize border isn't included.
+
+**Linux.** Capture is ffmpeg's `x11grab`, so a window is recorded as its rectangle. Window
+picking needs `wmctrl` or `xdotool` — without either, record a region or the whole display.
+**Wayland is not supported**: X11 capture generally sees only XWayland clients, so log into an
+Xorg session for now. Zoomcut says so explicitly instead of handing you a black video.
 
 ## Project files
 
@@ -214,7 +243,7 @@ shadow is the only one in the frame.
 
 ```jsonc
 {
-  "source": "/Users/you/Movies/Zoomcut/capture.mov",
+  "source": "/home/you/Videos/Zoomcut/capture.mkv",
   "trim": [0.0, null],
   "output": { "width": 2560, "height": 1440, "fps": 60, "crf": 17 },
   "style": {
@@ -231,8 +260,8 @@ shadow is the only one in the frame.
 }
 ```
 
-`shots` is the readable plan; `keys` is what the renderer consumes. Edit `shots` in the app and
-`keys` are rebuilt for you. `zoom: 1.0` always means the whole, uncropped window; `cx`/`cy` are
+`shots` is the readable plan; `keys` is what the renderer consumes. Edit shots in the app and the
+keys are rebuilt for you. `zoom: 1.0` always means the whole, uncropped window; `cx`/`cy` are
 `0`–`1` across the recording.
 
 ## Tests
@@ -242,48 +271,58 @@ python3 tests/test_all.py            # everything (needs a desktop session)
 python3 tests/test_all.py --quick    # skips wallpapers, window list, live recording
 ```
 
-**119 checks**, covering:
+**136 checks.** CI runs them on **macOS, Windows and Linux**, and on Linux and Windows it goes
+further: it records for real (Linux under a virtual X display), auto-cuts that capture and
+renders it, so the whole cycle is exercised on each platform every push.
 
-- camera maths — spring convergence and overshoot, crop clamping under hostile input
-- director invariants on synthetic clips, including a dead-still one and a strobing one:
-  always opens and closes on the full window, shots tile the timeline with no gaps, every crop
-  stays inside the frame, keys are monotonic
-- edge cases that would ruin a first run — 0.6s clips, 160×120, portrait, missing files,
-  dot-file output, region mode with no region, recording a window id that no longer exists
-- style-preset import, wallpaper discovery and fuzzy matching
-- the renderer, including trims, gradient backgrounds and a **banding check**
-- **every web endpoint**, including confirming that `/etc/passwd` and `~/.ssh/id_rsa` are *not*
-  servable and that video is served with `Range` support so it can seek
-- a **real window recording** taken through the entire record → auto-cut → render cycle
+What's covered: camera maths (spring convergence, crop clamping under hostile input); the
+director's invariants on synthetic clips including a dead-still one and a strobing one — always
+opens and closes on the full window, shots tile the timeline with no gaps, every crop stays
+inside the frame; edge cases that would ruin a first run (0.6s clips, 160×120, portrait, missing
+files, dot-file output, a window id that no longer exists); the Windows and Linux capture command
+builders; style-preset import; wallpaper discovery; the renderer including trims and a banding
+check; and every web endpoint, including confirming that `/etc/passwd` and `~/.ssh/id_rsa` are
+*not* servable and that video is served with `Range` support so it can seek.
+
+Regenerate the documentation images with `python3 tools/make_docs.py` and the brand assets with
+`python3 tools/make_brand.py`. The screenshots use a synthetic recording and a fixed window list
+(`ZOOMCUT_DEMO=1`), so nobody's real screen ends up in the repository.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| "Permission needed" in the UI | Grant Screen Recording to the app that launched Zoomcut, then restart it |
-| The camera zooms somewhere odd | Something else on screen was moving — a clock, a notification. Edit the shot in step 2, or raise `--min-shot` |
+| "Permission needed" (macOS) | Grant Screen Recording to whatever launched Zoomcut, then restart it |
+| "no X11 display found" (Linux) | You're on Wayland — log in with an Xorg session |
+| Window list is empty (Linux) | `sudo apt install wmctrl`, or record a region instead |
+| `ffmpeg was not found` | Install it, or point Zoomcut at it with `ZOOMCUT_FFMPEG=/path/to/ffmpeg` |
+| The camera zooms somewhere odd | Something else on screen was moving — a clock, a notification. Click the shot in the timeline and retune it, or raise `--min-shot` |
 | Too much zooming | Lower `--max-zoom`, or raise `--min-zoom` so marginal moves stay wide |
-| Zooms feel too tight | Raise `--context` for more breathing room around the action |
+| Zooms feel too tight | Raise `--context` |
 | Nothing zooms at all | The whole screen was changing at once, so every beat is a cut. Lower `--wide-hold` |
 | Background bands after sharing | A platform re-compressed it. Export `--size 1080p` |
-| `ffmpeg not found` | `brew install ffmpeg` |
 
 ## How it's built
 
 Pure Python, no framework. `numpy` and `Pillow` do the compositing, `ffmpeg` does codecs, and the
-window list comes from CoreGraphics through `ctypes` — so it works on a stock macOS Python with
-no `pyobjc`.
+window list comes from each platform's own API through `ctypes` — so it runs on a stock Python
+with no `pyobjc` or `pywin32`.
 
 | module | what it does |
 |---|---|
 | `analyze.py` | decodes once, small and grey; builds the heat map, cuts and structure profiles |
 | `director.py` | turns that into a shot plan, then into camera keyframes |
 | `render.py` | background, shadow, rounded window, spring camera, encode |
-| `recorder.py` | `screencapture` wrapper, including the truncation fix |
-| `windows.py` | CoreGraphics window list via `ctypes` |
-| `wallpapers.py` | finds and caches the wallpapers installed on your Mac |
+| `recorder.py` | one capture backend per platform, with their quirks handled |
+| `winlist.py` | window enumeration: CoreGraphics, EnumWindows, wmctrl/xdotool |
+| `wallpapers.py` | finds and caches the wallpapers installed on your machine |
 | `project.py` | the project file, and style-preset import |
 | `server.py` + `web/` | the local app |
+
+Releases are built by [`release.yml`](.github/workflows/release.yml): PyInstaller folder builds
+for macOS (arm64 and x86_64), Windows and Linux, plus a wheel and sdist. Folder builds, not
+one-file — a one-file bundle re-links every extension module on each launch, which costs about
+ten seconds before the app answers. The folder build starts in **0.3 s**.
 
 ## License
 

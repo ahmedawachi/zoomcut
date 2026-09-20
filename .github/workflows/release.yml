@@ -1,0 +1,110 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and release"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build · ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,       name: macos-arm64,   asset: zoomcut-macos-arm64 }
+          - { os: macos-13,       name: macos-x86_64,  asset: zoomcut-macos-x86_64 }
+          - { os: windows-latest, name: windows-x86_64, asset: zoomcut-windows-x86_64 }
+          - { os: ubuntu-22.04,   name: linux-x86_64,  asset: zoomcut-linux-x86_64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pillow pyinstaller
+
+      - name: Build
+        run: python -m PyInstaller packaging/zoomcut.spec --noconfirm --distpath dist --workpath build
+
+      - name: Smoke-test the build (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ./dist/zoomcut/zoomcut --help > /dev/null
+          echo "binary starts"
+
+      - name: Smoke-test the build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          .\dist\zoomcut\zoomcut.exe --help | Out-Null
+          echo "binary starts"
+
+      - name: Stage the package
+        shell: bash
+        run: |
+          cp README.md LICENSE dist/zoomcut/
+          mkdir -p out
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -tzip "../out/${{ matrix.asset }}.zip" zoomcut > /dev/null
+          else
+            tar -czf "../out/${{ matrix.asset }}.tar.gz" zoomcut
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: out/*
+
+  wheel:
+    name: build · wheel + sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+
+  release:
+    name: publish release
+    needs: [build, wheel]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect
+        run: |
+          mkdir -p upload
+          find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.whl' \) \
+            -exec cp {} upload/ \;
+          ls -la upload
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then TAG="${{ inputs.tag }}"; fi
+          gh release create "$TAG" upload/* \
+            --title "Zoomcut $TAG" \
+            --generate-notes \
+            --verify-tag || gh release upload "$TAG" upload/* --clobber

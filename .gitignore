@@ -7,11 +7,18 @@ dist/
 .venv/
 venv/
 
-# zoomcut runtime
+# zoomcut runtime (but the documentation clip is committed)
 *.mov
 *.mp4
+!docs/*.mp4
 *.zoomcut.json
 .preview-still.png
 
 # macOS
 .DS_Store
+
+# build
+.venv/
+build/
+dist/
+*.spec.bak

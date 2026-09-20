@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, asdict
 import subprocess
 import numpy as np
 
-from .util import probe, require, ZoomcutError
+from .util import probe, ffmpeg, ZoomcutError
 
 ANALYSIS_FPS = 20
 GRID_W = 96
@@ -71,9 +71,8 @@ class Analysis:
 
 
 def _decode_gray(path: str, afps: int, gw: int, gh: int) -> np.ndarray:
-    require("ffmpeg")
     cmd = [
-        "ffmpeg", "-nostdin", "-v", "error", "-i", path,
+        ffmpeg(), "-nostdin", "-v", "error", "-i", path,
         "-vf", f"fps={afps},scale={gw}:{gh}:flags=area,format=gray",
         "-f", "rawvideo", "-pix_fmt", "gray", "-",
     ]

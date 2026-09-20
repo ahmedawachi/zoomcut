@@ -4,20 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zoomcut"
-version = "1.0.0"
-description = "Record your Mac screen and get a finished, edited-looking video with automatic camera moves."
+version = "1.1.0"
+description = "Record your screen and get a finished, edited-looking video with automatic camera moves. macOS, Windows and Linux."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Ahmed Awachi" }]
-keywords = ["screen-recording", "screencast", "video", "macos", "demo", "ffmpeg"]
+keywords = ["screen-recording", "screencast", "video", "demo", "ffmpeg",
+            "macos", "windows", "linux", "devtools"]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Environment :: MacOS X",
+  "Environment :: Win32 (MS Windows)",
+  "Environment :: X11 Applications",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Operating System :: MacOS :: MacOS X",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Topic :: Multimedia :: Video",
 ]

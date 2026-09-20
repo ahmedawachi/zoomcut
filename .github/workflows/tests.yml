@@ -8,12 +8,16 @@ on:
 
 jobs:
   test:
-    name: macOS · python ${{ matrix.python }}
-    runs-on: macos-latest
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.12"]
+        include:
+          - { os: macos-latest,   name: "macOS",   python: "3.12" }
+          - { os: windows-latest, name: "Windows", python: "3.12" }
+          - { os: ubuntu-latest,  name: "Linux",   python: "3.12" }
+          - { os: ubuntu-latest,  name: "Linux · python 3.10", python: "3.10" }
     steps:
       - uses: actions/checkout@v4
 
@@ -21,15 +25,47 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Install ffmpeg
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
         run: brew install ffmpeg
+
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --no-progress -y
+
+      - name: Install ffmpeg and an X server (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg xvfb wmctrl xdotool x11-utils
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install numpy pillow
 
-      # --quick skips the checks that need a real desktop session
-      # (wallpapers, window list, screen recording permission).
-      - name: Run tests
+      # --quick skips the checks that need a logged-in desktop session
+      # (wallpaper catalogue, window list, screen-recording permission).
+      - name: Test suite
         run: python tests/test_all.py --quick
+
+      # The Linux recorder is exercised for real against a virtual X display:
+      # capture a region, auto-cut it, render it.
+      - name: Record → auto-cut → render (Linux, under Xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x800x24" python -m zoomcut record \
+            --mode region --region 0,0,640,480 --seconds 3 -o /tmp/cap.mkv
+          python -m zoomcut auto /tmp/cap.mkv -o /tmp/out.mp4 --preview --size 1080p
+          python -c "from zoomcut.util import probe; i = probe('/tmp/out.mp4'); print(i); assert i['duration'] > 1.0 and i['width'] == 1920"
+
+      # Same on Windows, where the runner has a real desktop session.
+      - name: Record → auto-cut → render (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -e
+          python -m zoomcut record --mode region --region 0,0,640,480 --seconds 3 -o cap.mkv
+          python -m zoomcut auto cap.mkv -o out.mp4 --preview --size 1080p
+          test -s out.mp4
+          python -c "from zoomcut.util import probe; i=probe('out.mp4'); print(i); assert i['duration']>1.0"

@@ -11,7 +11,7 @@ from typing import Callable
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-from .util import require, ZoomcutError
+from .util import ffmpeg, ZoomcutError
 from . import wallpapers
 
 Image.MAX_IMAGE_PIXELS = None
@@ -203,7 +203,6 @@ class Stage:
 # --------------------------------------------------------------------------
 def render(project: dict, out_path: str, preview: bool = False,
            progress: Callable[[int, int], None] | None = None) -> str:
-    require("ffmpeg")
     src_path = project["source"]
     if not os.path.isfile(src_path):
         raise ZoomcutError(f"source recording not found: {src_path}")
@@ -235,12 +234,12 @@ def render(project: dict, out_path: str, preview: bool = False,
     s_x = Spring(cx0, k, m, c)
     s_y = Spring(cy0, k, m, c)
 
-    dec_cmd = ["ffmpeg", "-nostdin", "-v", "error"]
+    dec_cmd = [ffmpeg(), "-nostdin", "-v", "error"]
     if t0 > 0:
         dec_cmd += ["-ss", f"{t0:.4f}"]
     dec_cmd += ["-i", src_path, "-t", f"{t1 - t0:.4f}",
                 "-vf", f"fps={fps}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
-    enc_cmd = ["ffmpeg", "-nostdin", "-v", "error", "-y",
+    enc_cmd = [ffmpeg(), "-nostdin", "-v", "error", "-y",
                "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{ow}x{oh}", "-r", str(fps), "-i", "-",
                "-c:v", "libx264", "-preset", "medium" if preview else out.get("preset", "slow"),
                "-crf", str(22 if preview else out.get("crf", 17)),
@@ -310,7 +309,7 @@ def still(project: dict, t: float, out_path: str, width: int = 1280) -> str:
         tz, tx, ty = target_at(keys, t_start + i / fps)
         z = math.exp(s_z.step(math.log(max(tz, 1e-6)), 1.0 / fps))
         cx, cy = s_x.step(tx, 1.0 / fps), s_y.step(ty, 1.0 / fps)
-    p = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{t:.4f}",
+    p = subprocess.run([ffmpeg(), "-nostdin", "-v", "error", "-ss", f"{t:.4f}",
                         "-i", project["source"], "-frames:v", "1",
                         "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True)
     raw = p.stdout[:sw * sh * 3]

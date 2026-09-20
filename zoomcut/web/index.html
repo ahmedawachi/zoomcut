@@ -5,385 +5,632 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Zoomcut</title>
 <style>
-  :root{
-    --bg:#0f1014; --panel:#17181e; --panel2:#1e1f27; --line:#2a2c36;
-    --ink:#e9eaf0; --dim:#9a9db0; --accent:#6c63ff; --accent2:#8c87df;
-    --ok:#3ecf8e; --warn:#ffb020; --err:#ff6b6b; --radius:14px;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-       font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,sans-serif}
-  header{padding:22px 28px 8px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
-  h1{font-size:22px;margin:0;letter-spacing:-.02em;display:flex;align-items:center;gap:9px}
-  h1 .mark{width:26px;height:26px;flex:none}
-  h1 span{background:linear-gradient(120deg,var(--accent),var(--accent2));
-          -webkit-background-clip:text;background-clip:text;color:transparent}
-  .sub{color:var(--dim);font-size:13px}
-  .wrap{display:grid;grid-template-columns:minmax(380px,1fr) minmax(420px,1.25fr);
-        gap:18px;padding:14px 28px 40px;align-items:start}
-  @media(max-width:1000px){.wrap{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-        padding:18px;margin-bottom:18px}
-  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
-           margin:0 0 14px;font-weight:600}
-  label{display:block;font-size:12px;color:var(--dim);margin:12px 0 5px}
-  input,select,button,textarea{font:inherit;color:var(--ink)}
-  input[type=text],input[type=number],select,textarea{
-    width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;
-    padding:9px 11px;outline:none}
-  input:focus,select:focus{border-color:var(--accent)}
-  .row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
-  button{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
-         padding:10px 15px;cursor:pointer;transition:.15s}
-  button:hover:not(:disabled){border-color:var(--accent);background:#23242e}
-  button:disabled{opacity:.42;cursor:not-allowed}
-  button.primary{background:linear-gradient(120deg,var(--accent),var(--accent2));
-                 border:none;color:#fff;font-weight:600}
-  button.rec{background:#c0392b;border:none;color:#fff;font-weight:600}
-  .btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
-  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;
-        border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
-  .dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
-  .dot.ok{background:var(--ok)}.dot.err{background:var(--err)}.dot.live{background:#ff4d4d;
-    animation:pulse 1.1s infinite}
-  @keyframes pulse{50%{opacity:.25}}
-  table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th{text-align:left;color:var(--dim);font-weight:600;padding:5px 6px;border-bottom:1px solid var(--line)}
-  td{padding:3px 4px;border-bottom:1px solid #22232b}
-  td input{padding:5px 6px;font-size:12.5px;border-radius:6px}
-  .tag{font-size:10.5px;padding:2px 7px;border-radius:999px;background:#24252f;color:var(--dim)}
-  .tag.focus{background:#2a2550;color:#b9b3ff}
-  .tag.reveal,.tag.open,.tag.close{background:#123027;color:#79e0b5}
-  .muted{color:var(--dim);font-size:12.5px}
-  .bar{height:7px;background:var(--panel2);border-radius:999px;overflow:hidden;margin-top:10px}
-  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));
-         transition:width .25s}
-  img.prev,video.prev{width:100%;border-radius:11px;border:1px solid var(--line);background:#000;display:block}
-  .msg{margin-top:12px;padding:10px 12px;border-radius:9px;font-size:12.5px;display:none}
-  .msg.show{display:block}
-  .msg.err{background:#3a1d1d;color:#ffc9c9;border:1px solid #5c2b2b}
-  .msg.ok{background:#14301f;color:#b6f0d2;border:1px solid #235c3c}
-  .msg.info{background:#1b2436;color:#bcd2f5;border:1px solid #2b3c5c}
-  .steps{display:flex;gap:7px;margin:0 28px 4px;flex-wrap:wrap}
-  .step{font-size:11.5px;color:var(--dim);padding:3px 11px;border-radius:999px;
-        border:1px solid var(--line);background:var(--panel)}
-  .step.on{color:#fff;border-color:var(--accent);background:#221f45}
-  .hint{font-size:11.5px;color:#7b7e90;margin-top:6px}
-  .scrub{width:100%;margin-top:10px}
-  code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:12px}
+:root{
+  --bg:#0b0c10; --panel:#14151b; --panel-2:#1b1c24; --panel-3:#22242e;
+  --line:#272935; --line-2:#333648;
+  --ink:#eceef5; --dim:#9296ad; --faint:#6a6e84;
+  --accent:#6c63ff; --accent-2:#968cf0; --accent-soft:rgba(108,99,255,.14);
+  --ok:#3ecf8e; --warn:#ffb020; --err:#ff6b6b;
+  --r:15px; --r-sm:10px;
+  --shadow:0 18px 50px -18px rgba(0,0,0,.85);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:
+    radial-gradient(1100px 620px at 16% -12%, rgba(108,99,255,.17), transparent 62%),
+    radial-gradient(900px 520px at 96% 4%, rgba(150,140,240,.09), transparent 60%),
+    var(--bg);
+  color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",
+    Inter,Roboto,sans-serif;-webkit-font-smoothing:antialiased;
+}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2c2f3d;border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:#3a3e51;background-clip:padding-box}
+
+/* ---------------------------------------------------------------- topbar */
+header{
+  position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:14px 26px;background:rgba(11,12,16,.78);backdrop-filter:blur(18px);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700;letter-spacing:-.02em}
+.brand svg{width:27px;height:27px;flex:none}
+.brand span{background:linear-gradient(110deg,var(--accent),var(--accent-2));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.tagline{color:var(--faint);font-size:12.5px;padding-left:4px;border-left:1px solid var(--line);margin-left:2px}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:5px 11px;
+  border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(62,207,142,.15)}
+.dot.err{background:var(--err);box-shadow:0 0 0 3px rgba(255,107,107,.15)}
+.dot.live{background:#ff4d4d;animation:pulse 1.15s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25;transform:scale(.82)}}
+.pill.rec{border-color:#5c2b2b;background:#2a1618;color:#ffc9c9;font-variant-numeric:tabular-nums}
+
+/* ---------------------------------------------------------------- layout */
+.wrap{display:grid;grid-template-columns:minmax(360px,400px) minmax(480px,1fr);
+  gap:18px;padding:18px 26px 60px;align-items:start;max-width:1720px;margin:0 auto}
+@media(max-width:1080px){.wrap{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.028),transparent 70%),var(--panel);
+  border:1px solid var(--line);border-radius:var(--r);padding:17px 17px 18px;margin-bottom:18px;
+  box-shadow:var(--shadow)}
+.card>h2{display:flex;align-items:center;gap:9px;font-size:11px;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--dim);margin:0 0 14px;font-weight:700}
+.card>h2 i{display:grid;place-items:center;width:19px;height:19px;border-radius:6px;
+  background:var(--accent-soft);color:var(--accent-2);font-size:10.5px;font-style:normal;font-weight:700}
+label{display:block;font-size:11.5px;color:var(--dim);margin:14px 0 6px;font-weight:500}
+label:first-of-type{margin-top:0}
+input[type=text],input[type=number],select{width:100%;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:var(--r-sm);padding:9px 11px;color:var(--ink);
+  font:inherit;outline:none;transition:.15s}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
+  linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+  background-position:calc(100% - 17px) 17px,calc(100% - 12px) 17px;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:32px}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+
+button{font:inherit;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+  border-radius:var(--r-sm);padding:10px 15px;cursor:pointer;transition:.15s;font-weight:500}
+button:hover:not(:disabled){border-color:var(--line-2);background:var(--panel-3);transform:translateY(-1px)}
+button:active:not(:disabled){transform:translateY(0)}
+button:disabled{opacity:.38;cursor:not-allowed}
+button.primary{background:linear-gradient(115deg,var(--accent),var(--accent-2));border:none;
+  color:#fff;font-weight:600;box-shadow:0 8px 22px -10px rgba(108,99,255,.9)}
+button.primary:hover:not(:disabled){filter:brightness(1.08)}
+button.rec{background:linear-gradient(115deg,#e0443a,#c0392b);border:none;color:#fff;font-weight:600;
+  box-shadow:0 8px 22px -10px rgba(224,68,58,.9)}
+button.ghost{background:transparent}
+button.wide{width:100%}
+.btns{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}
+
+/* segmented control */
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:3px;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:11px;padding:3px}
+.seg button{background:transparent;border:none;padding:7px 4px;border-radius:8px;font-size:12.5px;
+  color:var(--dim);font-weight:500}
+.seg button.on{background:var(--accent-soft);color:#cfc9ff;box-shadow:inset 0 0 0 1px rgba(108,99,255,.35)}
+.seg button:hover:not(.on){color:var(--ink);transform:none}
+
+/* window picker */
+.search{position:relative;margin-bottom:8px}
+.search input{padding-left:31px}
+.search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;
+  fill:none;stroke:var(--faint);stroke-width:2}
+.winlist{max-height:188px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--panel-2)}
+.win{display:flex;align-items:center;gap:10px;padding:9px 11px;cursor:pointer;
+  border-bottom:1px solid #1f2029;transition:.12s}
+.win:last-child{border-bottom:none}
+.win:hover{background:var(--panel-3)}
+.win.on{background:var(--accent-soft);box-shadow:inset 2px 0 0 var(--accent)}
+.win .ico{width:26px;height:26px;border-radius:7px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(135deg,#2c2f3f,#23252f);font-size:11px;font-weight:700;color:#aeb2c8}
+.win .meta{min-width:0;flex:1}
+.win .a{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.win .t{font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.win .sz{font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums;flex:none}
+
+/* toggles */
+.toggles{display:flex;gap:16px;margin-top:13px;flex-wrap:wrap}
+.tog{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim);cursor:pointer;user-select:none}
+.tog input{display:none}
+.tog .sw{width:34px;height:19px;border-radius:999px;background:var(--panel-3);
+  border:1px solid var(--line);position:relative;transition:.18s;flex:none}
+.tog .sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;
+  background:var(--faint);transition:.18s}
+.tog input:checked + .sw{background:var(--accent-soft);border-color:var(--accent)}
+.tog input:checked + .sw::after{transform:translateX(15px);background:var(--accent-2)}
+
+/* sliders */
+.slider{margin-top:2px}
+.slider .top{display:flex;justify-content:space-between;align-items:baseline}
+.slider b{font-size:11.5px;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:999px;
+  background:var(--panel-3);outline:none;margin:9px 0 2px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));cursor:pointer;
+  box-shadow:0 0 0 4px rgba(108,99,255,.16)}
+
+/* wallpaper grid */
+.paper{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:230px;overflow-y:auto;
+  padding:2px}
+.pap{position:relative;aspect-ratio:16/9;border-radius:9px;overflow:hidden;cursor:pointer;
+  border:1.5px solid transparent;background:var(--panel-3);transition:.15s}
+.pap img{width:100%;height:100%;object-fit:cover;display:block}
+.pap .nm{position:absolute;left:0;right:0;bottom:0;padding:11px 6px 4px;font-size:9.5px;
+  color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.82));white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.pap:hover{transform:translateY(-2px)}
+.pap.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.pap.grad{background:linear-gradient(130deg,#3F37C9,#8C87DF)}
+
+/* stage */
+.stage{background:
+   repeating-conic-gradient(#15161d 0% 25%, #101118 0% 50%) 50%/22px 22px;
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;display:grid;place-items:center;
+  min-height:260px;position:relative}
+.stage img,.stage video{width:100%;display:block}
+.stage .empty{color:var(--faint);font-size:13px;text-align:center;padding:60px 20px;line-height:1.8}
+.stage .empty b{display:block;color:var(--dim);font-size:14px;margin-bottom:3px}
+.scrubrow{display:flex;align-items:center;gap:11px;margin-top:11px}
+.scrubrow input[type=range]{margin:0}
+.time{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;min-width:74px;text-align:right}
+
+/* timeline */
+.tl{position:relative;height:62px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:11px;overflow:hidden;display:flex;margin-top:4px}
+.shot{position:relative;border-right:1px solid rgba(0,0,0,.45);cursor:pointer;transition:.13s;
+  display:flex;align-items:flex-end;min-width:2px}
+.shot:last-child{border-right:none}
+.shot .fill{width:100%;background:linear-gradient(180deg,var(--accent),var(--accent-2));opacity:.55}
+.shot:hover .fill{opacity:.8}
+.shot.on{box-shadow:inset 0 0 0 2px var(--accent-2)}
+.shot.on .fill{opacity:1}
+.shot .lb{position:absolute;top:5px;left:6px;font-size:9.5px;color:#cfd2e4;font-weight:600;
+  text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none;font-variant-numeric:tabular-nums}
+.tlkey{display:flex;gap:13px;margin-top:8px;font-size:10.5px;color:var(--faint);flex-wrap:wrap}
+.tlkey i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+
+.insp{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:13px}
+.insp label{margin:0 0 4px}
+.insp input{padding:7px 9px;font-size:12.5px}
+.muted{color:var(--dim);font-size:12.5px}
+.hint{font-size:11.5px;color:var(--faint);margin-top:8px;line-height:1.6}
+.bar{height:6px;background:var(--panel-2);border-radius:999px;overflow:hidden;margin-top:12px;display:none}
+.bar.on{display:block}
+.bar>i{display:block;height:100%;width:0;border-radius:999px;
+  background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .3s}
+
+/* toasts */
+#toasts{position:fixed;top:66px;right:20px;z-index:80;display:flex;flex-direction:column;gap:9px;
+  max-width:390px}
+.toast{padding:11px 14px;border-radius:11px;font-size:12.5px;border:1px solid var(--line);
+  background:var(--panel-2);box-shadow:var(--shadow);animation:slide .22s ease both}
+@keyframes slide{from{opacity:0;transform:translateX(16px)}}
+.toast.ok{border-color:#235c3c;background:#12281d;color:#b6f0d2}
+.toast.err{border-color:#5c2b2b;background:#2a1618;color:#ffc9c9}
+.toast.info{border-color:#2b3c5c;background:#161d2b;color:#c3d5f2}
+.drop{position:fixed;inset:0;z-index:90;display:none;place-items:center;
+  background:rgba(11,12,16,.9);backdrop-filter:blur(6px);font-size:17px;color:var(--ink)}
+.drop.on{display:grid}
+.drop div{border:2px dashed var(--accent);border-radius:20px;padding:56px 76px;text-align:center}
 </style>
 </head>
 <body>
+
 <header>
-  <h1>
-    <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+  <div class="brand">
+    <svg viewBox="0 0 100 100" aria-hidden="true">
       <defs><linearGradient id="zg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#6c63ff"/><stop offset="1" stop-color="#968cf0"/>
-      </linearGradient></defs>
-      <rect x="9" y="9" width="82" height="82" rx="23" fill="none"
-            stroke="url(#zg)" stroke-width="8.5"/>
-      <rect x="28.5" y="28.5" width="43" height="43" rx="10.5" fill="url(#zg)"
-            stroke="#17181e" stroke-width="7"/>
-    </svg><span>Zoomcut</span></h1>
-  <div class="sub">record → automatic zooms → export</div>
-  <span class="pill" id="perm"><i class="dot"></i><span>checking…</span></span>
-  <span class="pill" id="recpill" style="display:none"><i class="dot live"></i><span id="rectime">0.0s</span></span>
+        <stop offset="0" stop-color="#6c63ff"/><stop offset="1" stop-color="#968cf0"/></linearGradient></defs>
+      <rect x="9" y="9" width="82" height="82" rx="23" fill="none" stroke="url(#zg)" stroke-width="8.5"/>
+      <rect x="28.5" y="28.5" width="43" height="43" rx="10.5" fill="url(#zg)" stroke="#0b0c10" stroke-width="7"/>
+    </svg>
+    <span>Zoomcut</span>
+  </div>
+  <div class="tagline">record → automatic zooms → export</div>
+  <div class="spacer"></div>
+  <span class="pill rec" id="recpill" style="display:none"><i class="dot live"></i><span id="rectime">0.0s</span></span>
+  <span class="pill" id="pPlat"><i class="dot"></i><span>…</span></span>
+  <span class="pill" id="pFf"><i class="dot"></i><span>ffmpeg</span></span>
+  <span class="pill" id="pPerm"><i class="dot"></i><span>screen recording</span></span>
 </header>
-<div class="steps">
-  <div class="step" id="s1">1 · capture</div><div class="step" id="s2">2 · auto-cut</div>
-  <div class="step" id="s3">3 · look</div><div class="step" id="s4">4 · export</div>
-</div>
+
+<div id="toasts"></div>
+<div class="drop" id="drop"><div>Drop a recording to auto-cut it</div></div>
 
 <div class="wrap">
- <div>
+<!-- ------------------------------------------------------------ left rail -->
+<div>
   <div class="card">
-    <h2>1 · capture</h2>
-    <label>What to record</label>
-    <select id="mode">
-      <option value="window">A window</option>
-      <option value="display">Whole display</option>
-      <option value="region">A region</option>
-      <option value="interactive">Let macOS ask me</option>
-    </select>
+    <h2><i>1</i> Capture</h2>
+    <div class="seg" id="modes"></div>
 
-    <div id="windowBox">
-      <label>Window <a href="#" id="refreshWins" style="color:var(--accent);text-decoration:none">refresh</a></label>
-      <select id="windowSel"></select>
+    <div id="boxWindow" style="margin-top:14px">
+      <div class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="text" id="winSearch" placeholder="Search windows…">
+      </div>
+      <div class="winlist" id="winlist"></div>
     </div>
-    <div id="displayBox" style="display:none">
+    <div id="boxDisplay" style="display:none;margin-top:14px">
       <label>Display number</label><input type="number" id="display" value="1" min="1">
     </div>
-    <div id="regionBox" style="display:none">
-      <label>Region — x, y, width, height (points)</label>
+    <div id="boxRegion" style="display:none;margin-top:14px">
+      <label>Region — x, y, width, height</label>
       <input type="text" id="region" placeholder="0,0,1280,800">
     </div>
+    <div id="boxInter" style="display:none;margin-top:14px">
+      <div class="muted">macOS will ask you to pick an area when you hit record.</div>
+    </div>
 
-    <div class="row" style="margin-top:12px">
-      <label style="margin:0"><input type="checkbox" id="cursor" checked> show cursor</label>
-      <label style="margin:0"><input type="checkbox" id="clicks"> highlight clicks</label>
+    <div class="toggles">
+      <label class="tog"><input type="checkbox" id="cursor" checked><span class="sw"></span>show cursor</label>
+      <label class="tog"><input type="checkbox" id="clicks"><span class="sw"></span>highlight clicks</label>
     </div>
 
     <div class="btns">
-      <button class="rec" id="btnRec">● Record</button>
-      <button id="btnStop" disabled>■ Stop</button>
+      <button class="rec" id="btnRec" style="flex:1">● Record</button>
+      <button id="btnStop" disabled style="flex:1">■ Stop</button>
     </div>
-    <div class="hint">Recording stops cleanly and is padded to real elapsed time.</div>
-
-    <label style="margin-top:18px">…or use a file you already have</label>
-    <input type="text" id="source" placeholder="~/Downloads/demo.mov">
-    <div class="btns"><button class="primary" id="btnAnalyze">Auto-cut this</button></div>
-    <div class="msg" id="srcMsg"></div>
+    <div class="hint" id="capHint"></div>
   </div>
 
   <div class="card">
-    <h2>3 · look</h2>
+    <h2><i>2</i> Source</h2>
+    <label>Recording to cut</label>
+    <input type="text" id="source" placeholder="drop a file here, or record above">
+    <div class="btns"><button class="primary wide" id="btnAnalyze">Auto-cut this</button></div>
+  </div>
+
+  <div class="card">
+    <h2><i>3</i> Look</h2>
     <label>Background</label>
-    <select id="bg"></select>
-    <div class="row">
-      <div><label>Dim</label><input type="number" id="dim" value="0.12" step="0.02" min="0" max="0.8"></div>
-      <div><label>Blur (px)</label><input type="number" id="blur" value="0" step="2" min="0" max="80"></div>
-      <div><label>Padding</label><input type="number" id="padding" value="0.0702" step="0.005" min="0" max="0.25"></div>
-    </div>
-    <div class="row">
+    <div class="paper" id="paper"></div>
+
+    <div class="slider"><div class="top"><label style="margin:0">Dim</label><b id="vDim">0.12</b></div>
+      <input type="range" id="dim" min="0" max="0.6" step="0.02" value="0.12"></div>
+    <div class="slider"><div class="top"><label style="margin:0">Background blur</label><b id="vBlur">0 px</b></div>
+      <input type="range" id="blur" min="0" max="60" step="2" value="0"></div>
+    <div class="slider"><div class="top"><label style="margin:0">Padding</label><b id="vPad">0.070</b></div>
+      <input type="range" id="padding" min="0.01" max="0.2" step="0.005" value="0.0702"></div>
+
+    <div class="row" style="margin-top:14px">
       <div><label>Size</label><select id="size">
-        <option value="1440p" selected>1440p (2560×1440)</option>
-        <option value="1080p">1080p (1920×1080)</option>
-        <option value="4k">4K (3840×2160)</option></select></div>
+        <option value="1440p" selected>1440p · 2560×1440</option>
+        <option value="1080p">1080p · 1920×1080</option>
+        <option value="4k">4K · 3840×2160</option></select></div>
       <div><label>FPS</label><select id="fps"><option>60</option><option>30</option></select></div>
     </div>
-    <label>Import the look from an editor project JSON (optional)</label>
-    <input type="text" id="ss" placeholder="~/Downloads/project.json">
-    <div class="btns"><button id="btnRestyle">Apply look</button></div>
+    <div class="btns"><button class="wide" id="btnRestyle">Apply look</button></div>
   </div>
- </div>
+</div>
 
- <div>
+<!-- ------------------------------------------------------------ stage -->
+<div>
   <div class="card">
-    <h2>2 · auto-cut</h2>
-    <div id="shotsWrap" class="muted">Record something or pick a file, then hit <b>Auto-cut this</b>.</div>
-    <div class="btns" id="shotBtns" style="display:none">
-      <button id="btnApply">Apply edits</button>
-      <button id="btnRecut">Re-cut from scratch</button>
-      <button id="btnSave">Save project…</button>
+    <h2><i>4</i> Preview</h2>
+    <div class="stage" id="stage">
+      <div class="empty"><b>Nothing to preview yet</b>Record something, or drop a file, then auto-cut it.</div>
     </div>
-  </div>
-
-  <div class="card">
-    <h2>4 · preview &amp; export</h2>
-    <div id="previewWrap" class="muted">Nothing to preview yet.</div>
-    <input type="range" class="scrub" id="scrub" min="0" max="100" value="10" disabled>
+    <div class="scrubrow">
+      <input type="range" id="scrub" min="0" max="100" value="12" disabled>
+      <span class="time" id="tlabel">–</span>
+    </div>
     <div class="btns">
       <button id="btnStill" disabled>Preview frame</button>
       <button id="btnPrev" disabled>Render 720p draft</button>
       <button class="primary" id="btnExport" disabled>Export full quality</button>
+      <button class="ghost" id="btnSave" disabled>Save project…</button>
     </div>
-    <div class="bar" id="barWrap" style="display:none"><i id="bar"></i></div>
-    <div class="msg" id="renderMsg"></div>
-    <div id="playerWrap" style="margin-top:14px"></div>
+    <div class="bar" id="barWrap"><i id="bar"></i></div>
   </div>
- </div>
+
+  <div class="card">
+    <h2><i>5</i> Shots</h2>
+    <div id="tlWrap" class="muted">The camera plan appears here once you auto-cut a recording.</div>
+  </div>
+</div>
 </div>
 
 <script>
 const $ = s => document.querySelector(s);
-let project = null, duration = 0, polling = null;
+const el = (t, c, h) => { const n = document.createElement(t); if(c) n.className = c;
+                          if(h !== undefined) n.innerHTML = h; return n; };
+let project = null, duration = 0, poller = null, sel = -1, mode = 'window', winAll = [], winId = null;
+let bg = null, recording = false, paperList = [], paperDef = null;
 
 const api = async (path, body) => {
   const r = await fetch(path, body === undefined ? {} :
     {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-  const j = await r.json().catch(()=>({error:'bad response from zoomcut'}));
-  if (!r.ok || j.error) throw new Error(j.error || ('HTTP '+r.status));
+  const j = await r.json().catch(() => ({error:'Zoomcut sent something unreadable'}));
+  if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
   return j;
 };
-const msg = (el, text, kind='info') => {
-  const e = $(el); e.className = 'msg show ' + kind; e.textContent = text;
-};
-const hide = el => $(el).className = 'msg';
-const step = n => ['s1','s2','s3','s4'].forEach((s,i)=>$('#'+s).classList.toggle('on', i<n));
+function toast(msg, kind='info', ms=5200){
+  const t = el('div','toast '+kind, msg);
+  $('#toasts').appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateX(16px)';
+                   t.style.transition='.25s'; setTimeout(()=>t.remove(),260); }, ms);
+}
+const fmt = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}.${Math.floor(s*10)%10}`;
 
-// ---------------------------------------------------------------- capture
-$('#mode').onchange = () => {
-  const m = $('#mode').value;
-  $('#windowBox').style.display  = m==='window'  ? '' : 'none';
-  $('#displayBox').style.display = m==='display' ? '' : 'none';
-  $('#regionBox').style.display  = m==='region'  ? '' : 'none';
-};
+/* ---------------------------------------------------------------- capture */
+const MODE_LABEL = {window:'Window', display:'Display', region:'Region', interactive:'Ask me'};
+function buildModes(list){
+  const box = $('#modes'); box.innerHTML = '';
+  list.forEach(m => {
+    const b = el('button', m === mode ? 'on' : '', MODE_LABEL[m] || m);
+    b.onclick = () => { mode = m; buildModes(list); syncMode(); };
+    box.appendChild(b);
+  });
+  if (!list.includes(mode)) { mode = list[0]; buildModes(list); }
+}
+function syncMode(){
+  $('#boxWindow').style.display  = mode==='window'      ? '' : 'none';
+  $('#boxDisplay').style.display = mode==='display'     ? '' : 'none';
+  $('#boxRegion').style.display  = mode==='region'      ? '' : 'none';
+  $('#boxInter').style.display   = mode==='interactive' ? '' : 'none';
+}
+function drawWindows(){
+  const q = ($('#winSearch').value||'').toLowerCase();
+  const list = winAll.filter(w => !q || (w.app+' '+w.title).toLowerCase().includes(q));
+  const box = $('#winlist'); box.innerHTML = '';
+  if (!list.length){ box.appendChild(el('div','win', '<div class="meta"><div class="t">No windows matched</div></div>')); return; }
+  list.forEach(w => {
+    const n = el('div', 'win' + (w.id===winId ? ' on' : ''));
+    n.innerHTML = `<div class="ico">${(w.app||'?').slice(0,2).toUpperCase()}</div>
+      <div class="meta"><div class="a">${esc(w.app)}</div><div class="t">${esc(w.title||'untitled')}</div></div>
+      <div class="sz">${w.width}×${w.height}</div>`;
+    n.onclick = () => { winId = w.id; drawWindows(); };
+    box.appendChild(n);
+  });
+}
+const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
 async function loadWindows(){
   try{
-    const {windows} = await api('/api/windows');
-    const sel = $('#windowSel');
-    sel.innerHTML = windows.map(w =>
-      `<option value="${w.id}">${w.app} — ${w.title||'untitled'} (${w.width}×${w.height})</option>`
-    ).join('') || '<option value="">no windows found</option>';
-  }catch(e){ msg('#srcMsg','Could not list windows: '+e.message,'err'); }
+    const {windows, error} = await api('/api/windows');
+    winAll = windows || [];
+    if (error) toast(error, 'err', 9000);
+    if (winId === null && winAll.length) winId = winAll[0].id;
+    drawWindows();
+  }catch(e){ toast('Could not list windows: '+e.message, 'err'); }
 }
-$('#refreshWins').onclick = e => { e.preventDefault(); loadWindows(); };
+$('#winSearch').oninput = drawWindows;
 
 $('#btnRec').onclick = async () => {
-  hide('#srcMsg');
-  const mode = $('#mode').value;
   const body = {mode, cursor:$('#cursor').checked, clicks:$('#clicks').checked};
   if (mode==='window'){
-    const v = $('#windowSel').value;
-    if(!v){ return msg('#srcMsg','Pick a window first (hit refresh).','err'); }
-    body.windowId = parseInt(v,10);
+    if (!winId) return toast('Pick a window first.', 'err');
+    body.windowId = winId;
   }
   if (mode==='display') body.display = parseInt($('#display').value||'1',10);
   if (mode==='region'){
     const p = ($('#region').value||'').split(',').map(s=>parseInt(s.trim(),10));
-    if(p.length!==4 || p.some(isNaN)) return msg('#srcMsg','Region must be x,y,w,h','err');
+    if (p.length!==4 || p.some(isNaN)) return toast('Region must be x,y,w,h', 'err');
     body.region = p;
   }
   try{
     const r = await api('/api/record/start', body);
-    $('#btnRec').disabled = true; $('#btnStop').disabled = false;
-    msg('#srcMsg','Recording to '+r.path+' — do your thing, then hit Stop.','info');
-  }catch(e){ msg('#srcMsg', e.message, 'err'); }
+    $('#btnRec').disabled = true; $('#btnStop').disabled = false; recording = true;
+    toast('Recording to '+r.path.split('/').pop()+' — hit Stop when you are done.', 'info', 8000);
+  }catch(e){ toast(e.message, 'err', 11000); }
 };
 $('#btnStop').onclick = async () => {
   try{
     const r = await api('/api/record/stop', {});
-    $('#btnRec').disabled = false; $('#btnStop').disabled = true;
-    $('#source').value = r.path;
-    msg('#srcMsg',`Captured ${r.info.width}×${r.info.height}, ${r.info.duration.toFixed(1)}s. Now hit Auto-cut.`,'ok');
-  }catch(e){ $('#btnRec').disabled=false; $('#btnStop').disabled=true; msg('#srcMsg', e.message, 'err'); }
+    $('#source').value = r.path; recording = false;
+    toast(`Captured ${r.info.width}×${r.info.height}, ${r.info.duration.toFixed(1)}s.`, 'ok');
+    doAnalyze();
+  }catch(e){ toast(e.message, 'err', 11000); }
+  finally{ $('#btnRec').disabled = false; $('#btnStop').disabled = true; }
 };
 
-// ---------------------------------------------------------------- auto-cut
+/* ---------------------------------------------------------------- look */
 function styleBody(){
-  const bgv = $('#bg').value;
-  const b = {dim:parseFloat($('#dim').value)||0, blur:parseFloat($('#blur').value)||0};
-  if (bgv==='__gradient__') b.type='gradient';
-  else { b.type='wallpaper'; b.name=bgv; }
-  return {background:b, paddingRatio:parseFloat($('#padding').value)||0.0702};
+  const b = {dim:parseFloat($('#dim').value), blur:parseFloat($('#blur').value)};
+  if (bg === '__gradient__') b.type = 'gradient'; else { b.type = 'wallpaper'; b.name = bg; }
+  return {background:b, paddingRatio:parseFloat($('#padding').value)};
 }
+const bind = (id, out, f) => { const i = $(id); const u = () => $(out).textContent = f(i.value);
+                               i.oninput = u; u(); };
+bind('#dim','#vDim', v => (+v).toFixed(2));
+bind('#blur','#vBlur', v => (+v).toFixed(0)+' px');
+bind('#padding','#vPad', v => (+v).toFixed(3));
+
+function drawPapers(list, def){
+  const box = $('#paper'); box.innerHTML = '';
+  const grad = el('div','pap grad'+(bg==='__gradient__'?' on':''), '<div class="nm">Gradient</div>');
+  grad.onclick = () => { bg='__gradient__'; drawPapers(list, def); };
+  box.appendChild(grad);
+  list.forEach(n => {
+    const p = el('div','pap'+(n===bg?' on':''));
+    p.innerHTML = `<img loading="lazy" src="/api/wallpaper-thumb?name=${encodeURIComponent(n)}" alt="">
+                   <div class="nm">${esc(n)}</div>`;
+    p.onclick = () => { bg = n; drawPapers(list, def); };
+    box.appendChild(p);
+  });
+  // the catalogue is long and alphabetical, so bring the chosen one into view
+  const on = box.querySelector('.pap.on');
+  if (on && on !== grad) on.scrollIntoView({block:'nearest'});
+}
+$('#btnRestyle').onclick = async () => {
+  if (!project) return toast('Auto-cut a recording first.', 'err');
+  try{
+    project = (await api('/api/project', {style:styleBody(), output:{fps:parseInt($('#fps').value,10)}})).project;
+    toast('Look applied.', 'ok'); showStill();
+  }catch(e){ toast(e.message, 'err'); }
+};
+
+/* ---------------------------------------------------------------- auto-cut */
 async function doAnalyze(){
   const src = $('#source').value.trim();
-  if(!src) return msg('#srcMsg','Choose a recording first.','err');
-  msg('#srcMsg','Analysing motion and planning the camera…','info');
+  if (!src) return toast('Choose a recording first.', 'err');
+  toast('Reading the recording and planning the camera…', 'info', 3000);
   try{
     const r = await api('/api/analyze', {source:src, style:styleBody(),
-      size:$('#size').value, fps:parseInt($('#fps').value,10),
-      stylePreset: $('#ss').value.trim() || null});
-    project = r.project; duration = project.sourceInfo.duration;
-    renderShots(); enablePreview();
-    msg('#srcMsg',`Found ${project.analysis.cuts.length} view change(s), planned ${project.camera.shots.length} shots.`,'ok');
-    step(4);
-  }catch(e){ msg('#srcMsg', e.message, 'err'); }
+      size:$('#size').value, fps:parseInt($('#fps').value,10)});
+    project = r.project; duration = project.sourceInfo.duration; sel = -1;
+    drawTimeline(); enableStage(); jumpToInterest();
+    toast(`${project.analysis.cuts.length} view change(s) found · ${project.camera.shots.length} shots planned.`, 'ok');
+    showStill();
+  }catch(e){ toast(e.message, 'err', 11000); }
 }
 $('#btnAnalyze').onclick = doAnalyze;
-$('#btnRecut').onclick = doAnalyze;
 
-function renderShots(){
-  const shots = project.camera.shots;
-  $('#shotsWrap').innerHTML = `
-   <div class="muted" style="margin-bottom:8px">
-     cuts detected at ${project.analysis.cuts.map(c=>c.toFixed(2)+'s').join(', ')||'—'}
-   </div>
-   <table><thead><tr><th>start</th><th>end</th><th>zoom</th><th>x</th><th>y</th><th>what</th></tr></thead>
-   <tbody>${shots.map((s,i)=>`<tr>
-     <td><input type="number" step="0.05" value="${s.start.toFixed(2)}" data-i="${i}" data-k="start"></td>
-     <td><input type="number" step="0.05" value="${s.end.toFixed(2)}" data-i="${i}" data-k="end"></td>
-     <td><input type="number" step="0.05" min="1" value="${s.zoom.toFixed(2)}" data-i="${i}" data-k="zoom"></td>
-     <td><input type="number" step="0.02" min="0" max="1" value="${s.cx.toFixed(3)}" data-i="${i}" data-k="cx"></td>
-     <td><input type="number" step="0.02" min="0" max="1" value="${s.cy.toFixed(3)}" data-i="${i}" data-k="cy"></td>
-     <td><span class="tag ${s.reason}">${s.reason}</span></td></tr>`).join('')}</tbody></table>
-   <div class="hint">zoom 1.00 = the whole window. x/y are 0–1 across the recording.</div>`;
-  $('#shotBtns').style.display = 'flex';
-}
-$('#btnApply').onclick = async () => {
-  document.querySelectorAll('#shotsWrap input').forEach(inp=>{
-    const s = project.camera.shots[+inp.dataset.i];
-    if (s) s[inp.dataset.k] = parseFloat(inp.value);
+function drawTimeline(){
+  const shots = project.camera.shots, maxZ = Math.max(1.05, ...shots.map(s=>s.zoom));
+  const w = $('#tlWrap'); w.innerHTML = '';
+  const tl = el('div','tl');
+  shots.forEach((s,i) => {
+    const d = el('div','shot'+(i===sel?' on':''));
+    d.style.flex = (s.end - s.start);
+    const h = 18 + 78 * ((s.zoom - 1) / (maxZ - 1 || 1));
+    d.innerHTML = `<div class="fill" style="height:${h}%"></div>
+                   <div class="lb">${s.zoom.toFixed(2)}×</div>`;
+    d.title = `${s.reason} · ${s.start.toFixed(2)}–${s.end.toFixed(2)}s · zoom ${s.zoom.toFixed(2)}`;
+    d.onclick = () => { sel = i; drawTimeline(); $('#scrub').value = Math.round(((s.start+s.end)/2)*10); showStill(); };
+    tl.appendChild(d);
   });
-  try{
-    const r = await api('/api/project', {shots: project.camera.shots});
-    project = r.project; renderShots();
-    msg('#renderMsg','Camera updated — preview or export to see it.','ok');
-  }catch(e){ msg('#renderMsg', e.message,'err'); }
-};
-$('#btnRestyle').onclick = async () => {
-  if(!project) return msg('#srcMsg','Auto-cut something first.','err');
-  try{
-    const r = await api('/api/project', {style: styleBody(),
-      output:{fps:parseInt($('#fps').value,10)}});
-    project = r.project;
-    msg('#renderMsg','Look applied.','ok');
-  }catch(e){ msg('#renderMsg', e.message,'err'); }
-};
-$('#btnSave').onclick = async () => {
-  try{ const r = await api('/api/save', {}); msg('#renderMsg','Saved '+r.path,'ok'); }
-  catch(e){ msg('#renderMsg', e.message,'err'); }
-};
+  w.appendChild(tl);
+  w.appendChild(el('div','tlkey',
+    `<span><i style="background:#6c63ff"></i>bar height = zoom</span>
+     <span>cuts at ${project.analysis.cuts.map(c=>c.toFixed(2)+'s').join(', ') || '—'}</span>
+     <span>${shots.length} shots over ${duration.toFixed(1)}s</span>`));
 
-// ---------------------------------------------------------------- preview
-function enablePreview(){
-  ['#btnStill','#btnPrev','#btnExport','#scrub'].forEach(s=>$(s).disabled=false);
-  $('#scrub').max = Math.max(1, Math.floor(duration*10));
-  $('#scrub').value = Math.floor(duration*10*0.15);
+  if (sel >= 0){
+    const s = shots[sel];
+    const ins = el('div','insp');
+    [['start','Start',0.05],['end','End',0.05],['zoom','Zoom',0.05],['cx','Centre X',0.02],['cy','Centre Y',0.02]]
+      .forEach(([k,lab,st]) => {
+        const c = el('div'); c.innerHTML = `<label>${lab}</label>`;
+        const i = el('input'); i.type='number'; i.step=st; i.value = (+s[k]).toFixed(k==='cx'||k==='cy'?3:2);
+        i.onchange = async () => {
+          project.camera.shots[sel][k] = parseFloat(i.value);
+          try{
+            project = (await api('/api/project', {shots:project.camera.shots})).project;
+            drawTimeline(); showStill(); toast('Shot updated.', 'ok', 2200);
+          }catch(e){ toast(e.message,'err'); }
+        };
+        c.appendChild(i); ins.appendChild(c);
+      });
+    w.appendChild(ins);
+    w.appendChild(el('div','hint',
+      `Shot ${sel+1} of ${shots.length} · <b>${s.reason}</b>. Zoom 1.00 shows the whole window; centre is 0–1 across the recording.`));
+  } else {
+    w.appendChild(el('div','hint','Click a shot to adjust its zoom and framing.'));
+  }
 }
+
+/* park the playhead on the first real camera move - a wide frame tells you
+   nothing about what the edit is doing */
+function jumpToInterest(){
+  if (!project) return;
+  const s = project.camera.shots.find(x => x.zoom > 1.01);
+  const t = s ? (s.start + s.end) / 2 : duration * 0.15;
+  $('#scrub').value = Math.round(t * 10);
+  $('#tlabel').textContent = fmt(t) + ' / ' + fmt(duration);
+}
+
+/* ---------------------------------------------------------------- stage */
+function enableStage(){
+  ['#btnStill','#btnPrev','#btnExport','#btnSave','#scrub'].forEach(s => $(s).disabled = false);
+  $('#scrub').max = Math.max(1, Math.floor(duration*10));
+  if (+$('#scrub').value > +$('#scrub').max) $('#scrub').value = Math.floor(duration*10*.15);
+}
+let stillTimer = null;
 async function showStill(){
-  const t = (+$('#scrub').value)/10;
-  try{
-    const r = await api('/api/still', {t});
-    $('#previewWrap').innerHTML =
-      `<img class="prev" src="/api/file?path=${encodeURIComponent(r.path)}&c=${Date.now()}">
-       <div class="hint">frame at ${t.toFixed(1)}s</div>`;
-  }catch(e){ msg('#renderMsg', e.message,'err'); }
+  if (!project) return;
+  clearTimeout(stillTimer);
+  stillTimer = setTimeout(async () => {
+    const t = (+$('#scrub').value)/10;
+    $('#tlabel').textContent = fmt(t) + ' / ' + fmt(duration);
+    try{
+      const r = await api('/api/still', {t});
+      $('#stage').innerHTML = `<img src="/api/file?path=${encodeURIComponent(r.path)}&c=${Date.now()}" alt="">`;
+    }catch(e){ toast(e.message,'err'); }
+  }, 90);
 }
 $('#btnStill').onclick = showStill;
+$('#scrub').oninput = () => { const t=(+$('#scrub').value)/10;
+  $('#tlabel').textContent = fmt(t)+' / '+fmt(duration); };
 $('#scrub').onchange = showStill;
 
 async function startRender(preview){
-  hide('#renderMsg'); $('#barWrap').style.display='block';
+  $('#barWrap').classList.add('on'); $('#bar').style.width='0%';
   try{
     await api('/api/render', {preview});
-    ['#btnPrev','#btnExport'].forEach(s=>$(s).disabled=true);
-    poll();
-  }catch(e){ msg('#renderMsg', e.message,'err'); }
+    ['#btnPrev','#btnExport'].forEach(s => $(s).disabled = true);
+    clearInterval(poller);
+    poller = setInterval(async () => {
+      const p = await api('/api/progress');
+      $('#bar').style.width = p.pct + '%';
+      if (p.state === 'done'){
+        clearInterval(poller); ['#btnPrev','#btnExport'].forEach(s => $(s).disabled=false);
+        $('#stage').innerHTML =
+          `<video controls autoplay muted loop src="/api/file?path=${encodeURIComponent(p.output)}&c=${Date.now()}"></video>`;
+        toast('Done → '+p.output, 'ok', 12000);
+        const b = el('button','ghost','Show in folder');
+        b.onclick = () => api('/api/reveal',{path:p.output}).catch(()=>{});
+        $('#barWrap').after(b);
+      }
+      if (p.state === 'error'){
+        clearInterval(poller); ['#btnPrev','#btnExport'].forEach(s => $(s).disabled=false);
+        toast('Render failed: '+p.message, 'err', 14000);
+      }
+    }, 650);
+  }catch(e){ toast(e.message,'err'); }
 }
-$('#btnPrev').onclick = ()=>startRender(true);
-$('#btnExport').onclick = ()=>startRender(false);
+$('#btnPrev').onclick = () => startRender(true);
+$('#btnExport').onclick = () => startRender(false);
+$('#btnSave').onclick = async () => {
+  try{ toast('Saved '+(await api('/api/save', {})).path, 'ok', 9000); }
+  catch(e){ toast(e.message,'err'); }
+};
 
-function poll(){
-  clearInterval(polling);
-  polling = setInterval(async ()=>{
-    const p = await api('/api/progress');
-    $('#bar').style.width = p.pct+'%';
-    if (p.state==='running') msg('#renderMsg','Rendering — '+p.message,'info');
-    if (p.state==='done'){
-      clearInterval(polling);
-      ['#btnPrev','#btnExport'].forEach(s=>$(s).disabled=false);
-      msg('#renderMsg','Done → '+p.output,'ok');
-      $('#playerWrap').innerHTML =
-        `<video class="prev" controls autoplay muted src="/api/file?path=${encodeURIComponent(p.output)}&c=${Date.now()}"></video>
-         <div class="btns"><button onclick="reveal('${p.output.replace(/'/g,"\\'")}')">Show in Finder</button></div>`;
-    }
-    if (p.state==='error'){
-      clearInterval(polling);
-      ['#btnPrev','#btnExport'].forEach(s=>$(s).disabled=false);
-      msg('#renderMsg','Render failed: '+p.message,'err');
-    }
-  }, 700);
-}
-async function reveal(p){ try{ await api('/api/reveal',{path:p}); }catch(e){} }
+/* ---------------------------------------------------------------- drag & drop */
+let dragN = 0;
+addEventListener('dragenter', e => { e.preventDefault(); if(++dragN===1) $('#drop').classList.add('on'); });
+addEventListener('dragleave', e => { e.preventDefault(); if(--dragN<=0){ dragN=0; $('#drop').classList.remove('on'); } });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => {
+  e.preventDefault(); dragN=0; $('#drop').classList.remove('on');
+  const f = e.dataTransfer.files[0];
+  if (!f) return;
+  // browsers only expose the name; the server needs a path it can open
+  $('#source').value = f.path || f.name;
+  toast(f.path ? 'Loaded '+f.name : 'Dropped '+f.name+' — paste its full path if this fails.', 'info');
+  if (f.path) doAnalyze();
+});
 
-// ---------------------------------------------------------------- boot
-(async ()=>{
+/* ---------------------------------------------------------------- boot */
+(async () => {
   try{
     const {wallpapers, default:def} = await api('/api/wallpapers');
-    $('#bg').innerHTML = wallpapers.map(w=>`<option${w===def?' selected':''}>${w}</option>`).join('')
-      + '<option value="__gradient__">Gradient (purple)</option>';
-  }catch(e){}
+    paperList = wallpapers || []; paperDef = def;
+    bg = def || '__gradient__';
+    drawPapers(paperList, paperDef);
+  }catch(e){ bg='__gradient__'; drawPapers([], null); }
   await loadWindows();
-  step(1);
-  setInterval(async ()=>{
+
+  // if the server still holds a project (page reload, or a second tab), pick
+  // up exactly where we left off instead of showing an empty app
+  try{
+    const r = await api('/api/project');
+    if (r.project){
+      project = r.project; duration = project.sourceInfo.duration;
+      $('#source').value = project.source;
+      const b = project.style.background || {};
+      bg = b.type === 'gradient' ? '__gradient__' : (b.name || bg);
+      $('#dim').value = b.dim ?? 0.12; $('#dim').dispatchEvent(new Event('input'));
+      $('#blur').value = b.blur ?? 0;  $('#blur').dispatchEvent(new Event('input'));
+      $('#padding').value = project.style.paddingRatio ?? 0.0702;
+      $('#padding').dispatchEvent(new Event('input'));
+      drawPapers(paperList, paperDef);
+      drawTimeline(); enableStage(); jumpToInterest(); showStill();
+    }
+  }catch(e){}
+
+  const setPill = (id, ok, text, title) => {
+    $(id).innerHTML = `<i class="dot ${ok?'ok':'err'}"></i><span>${esc(text)}</span>`;
+    if (title) $(id).title = title;
+  };
+  setInterval(async () => {
     try{
       const s = await api('/api/state');
       const [ok, why] = s.permission;
-      $('#perm').innerHTML = `<i class="dot ${ok?'ok':'err'}"></i><span>${ok?'screen recording ready':'permission needed'}</span>`;
-      $('#perm').title = why;
-      $('#recpill').style.display = s.recording ? 'inline-flex':'none';
+      setPill('#pPlat', true, `${s.platform} · ${s.backend}`);
+      setPill('#pFf', s.ffmpeg, s.ffmpeg ? 'ffmpeg ready' : 'ffmpeg missing');
+      setPill('#pPerm', ok, ok ? 'screen recording ready' : 'permission needed', why);
+      $('#capHint').textContent = ok ? '' : why;
+      if (s.modes && s.modes.length && !$('#modes').dataset.built){
+        $('#modes').dataset.built = '1'; buildModes(s.modes); syncMode();
+      }
+      $('#recpill').style.display = s.recording ? 'inline-flex' : 'none';
       if (s.recording) $('#rectime').textContent = s.recordSeconds.toFixed(1)+'s';
     }catch(e){}
   }, 900);

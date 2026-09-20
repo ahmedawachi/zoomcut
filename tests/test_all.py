@@ -13,7 +13,7 @@ from zoomcut.director import plan, keyframes, DirectorConfig
 from zoomcut.project import new_project, save, load, import_style_preset
 from zoomcut.render import render, still, crop_box, target_at, Spring
 from zoomcut.util import probe, ZoomcutError
-from zoomcut import wallpapers, recorder, windows
+from zoomcut import wallpapers, recorder, winlist
 
 TMP = tempfile.mkdtemp(prefix="zoomcut-test-")
 # --quick skips the parts that need a real desktop (wallpapers, window list,
@@ -237,7 +237,7 @@ if QUICK:
     skip("window listing", "--quick")
 else:
   try:
-    wl = windows.pickable()
+    wl = winlist.pickable()
     check("windows can be listed", isinstance(wl, list))
     check("listed windows have id/app/size",
           all({"id", "app", "width", "height"} <= set(w) for w in wl))
@@ -397,8 +397,8 @@ if QUICK:
 elif not ok:
     skip("live recording cycle", why)
 if ok:
-    wins = [w for w in windows.pickable() if w["app"] in ("Finder", "System Settings")] \
-        or windows.pickable()
+    wins = [w for w in winlist.pickable() if w["app"] in ("Finder", "System Settings")] \
+        or winlist.pickable()
     if not wins:
         check("a window is available to record", False)
     else:
@@ -427,6 +427,58 @@ if ok:
               (fi["width"], fi["height"]) == (1280, 720) and fi["duration"] > 2.0, str(fi))
         os.remove(path)
         os.remove(fin)
+
+
+# ==========================================================================
+section("10 \u00b7 cross-platform capture commands")
+# The Windows and Linux recorders build ffmpeg command lines. Those are pure
+# functions, so their behaviour is checked here whatever platform we run on -
+# the parts that need the actual OS are covered by CI on that OS.
+_real_find, _real_size = winlist.find, winlist.screen_size
+winlist.find = lambda i: {"id": i, "app": "Safari", "title": "Acme Dashboard",
+                          "x": 40, "y": 60, "width": 1281, "height": 801,
+                          "layer": 0, "pid": 1}
+winlist.screen_size = lambda: (2560, 1440)
+try:
+    w_win = recorder._cmd_windows("o.mkv", "window", None, 1, 42, True, None)
+    check("windows: a window is grabbed by title", "title=Acme Dashboard" in w_win)
+    check("windows: gdigrab is the demuxer", "gdigrab" in w_win)
+    w_reg = recorder._cmd_windows("o.mkv", "region", (10, 20, 641, 481), 1, None, False, None)
+    check("windows: a region sets offsets", "-offset_x" in w_reg and "10" in w_reg)
+    check("windows: odd sizes are rounded even (h264 needs it)", "640x480" in w_reg,
+          " ".join(w_reg))
+    check("windows: cursor can be turned off",
+          w_reg[w_reg.index("-draw_mouse") + 1] == "0")
+    l_reg = recorder._cmd_linux("o.mkv", "region", (10, 20, 641, 481), 1, None, True, None)
+    check("linux: x11grab is the demuxer", "x11grab" in l_reg)
+    check("linux: the region is encoded in the input spec",
+          any(a.endswith("+10,20") for a in l_reg), " ".join(l_reg))
+    check("linux: odd sizes are rounded even", "640x480" in l_reg)
+    l_win = recorder._cmd_linux("o.mkv", "window", None, 1, 7, True, None)
+    check("linux: a window becomes its rectangle",
+          any(a.endswith("+40,60") for a in l_win) and "1280x800" in l_win, " ".join(l_win))
+    l_disp = recorder._cmd_linux("o.mkv", "display", None, 1, None, True, 5)
+    check("linux: whole display uses the screen size", "2560x1440" in l_disp)
+    check("a time limit is passed through", "-t" in l_disp and "5" in l_disp)
+    check("every backend encodes to h264 yuv420p",
+          all("libx264" in c and "yuv420p" in c for c in (w_win, w_reg, l_reg, l_disp)))
+    winlist.screen_size = lambda: None
+    try:
+        recorder._cmd_linux("o.mkv", "display", None, 1, None, True, None)
+        check("linux: unknown screen size is a clear error", False)
+    except ZoomcutError as e:
+        check("linux: unknown screen size is a clear error", "region" in str(e).lower())
+finally:
+    winlist.find, winlist.screen_size = _real_find, _real_size
+
+check("backend name matches the platform", recorder.backend_name() in
+      ("screencapture", "gdigrab", "x11grab"), recorder.backend_name())
+for bad in ("nope", "", "Window"):
+    try:
+        recorder.start("x.mov", mode=bad)
+        check(f"mode {bad!r} is rejected", False)
+    except ZoomcutError:
+        check(f"mode {bad!r} is rejected", True)
 
 tail = f", {len(SKIP)} skipped" if SKIP else ""
 print(f"\n\033[1m{len(PASS)} passed, {len(FAIL)} failed{tail}\033[0m")

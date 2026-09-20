@@ -7,7 +7,7 @@ from .analyze import analyze
 from .director import DirectorConfig, plan, keyframes
 from .project import new_project, save, load, import_style_preset, PRESETS, _deep_update
 from .render import render, still
-from .util import ZoomcutError
+from .util import ZoomcutError, platform_name, output_dir
 from . import recorder
 
 
@@ -116,7 +116,7 @@ def cmd_record(a):
 
 
 def cmd_windows(a):
-    from .windows import pickable
+    from .winlist import pickable
     ws = pickable()
     if not ws:
         print("no pickable windows found")
@@ -275,6 +275,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv:
+        argv = ["ui"]          # running the app with no arguments opens it
     args = build_parser().parse_args(argv)
     try:
         return args.func(args) or 0
