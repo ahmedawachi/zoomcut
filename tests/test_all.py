@@ -23,7 +23,10 @@ PASS, FAIL, SKIP = [], [], []
 
 
 def check(name, cond, detail=""):
-    (PASS if cond else FAIL).append(name)
+    if cond:
+        PASS.append(name)
+    else:
+        FAIL.append((name, str(detail)))
     print(f"  {'PASS' if cond else 'FAIL'}  {name}" + (f"   {detail}" if detail and not cond else ""))
     return cond
 
@@ -173,11 +176,16 @@ try:
     check("a portrait recording composites without error", True)
 except Exception as e:
     check("a portrait recording composites without error", False, repr(e))
-try:
-    recorder.start(os.path.join(TMP, ".hidden.mov"), mode="display")
-    check("dot-file output is rejected up front", False)
-except ZoomcutError:
-    check("dot-file output is rejected up front", True)
+if recorder.IS_MAC:
+    try:
+        recorder._prepare_path(os.path.join(TMP, ".hidden.mov"), ".mov")
+        check("dot-file output is rejected up front (macOS)", False)
+    except ZoomcutError:
+        check("dot-file output is rejected up front (macOS)", True)
+else:
+    # only screencapture has the dot-file quirk; elsewhere it is a valid name
+    ok = recorder._prepare_path(os.path.join(TMP, ".hidden.mkv"), ".mkv")
+    check("dot-file output is allowed off macOS", ok.endswith(".hidden.mkv"), ok)
 try:
     recorder.start(os.path.join(TMP, "x.mov"), mode="region", region=None)
     check("region mode without a region is rejected", False)
@@ -325,7 +333,11 @@ try:
     st = json.loads(body)
     check("GET /api/state works", code == 200 and "permission" in st)
     code, body, _ = get("/api/wallpapers")
-    check("GET /api/wallpapers lists wallpapers", code == 200 and json.loads(body)["wallpapers"])
+    wp_body = json.loads(body) if code == 200 else {}
+    check("GET /api/wallpapers answers with a catalogue",
+          code == 200 and isinstance(wp_body.get("wallpapers"), list), str(body)[:150])
+    if not wp_body.get("wallpapers"):
+        skip("wallpaper catalogue is empty here", "no desktop pictures installed")
     code, body, _ = get("/api/windows")
     check("GET /api/windows lists windows", code == 200 and "windows" in json.loads(body))
     code, body, _ = get("/api/nope")
@@ -483,6 +495,16 @@ for bad in ("nope", "", "Window"):
 tail = f", {len(SKIP)} skipped" if SKIP else ""
 print(f"\n\033[1m{len(PASS)} passed, {len(FAIL)} failed{tail}\033[0m")
 if FAIL:
-    print("failed:\n  " + "\n  ".join(FAIL))
+    print("failed:")
+    for name, detail in FAIL:
+        print(f"  {name}" + (f"   [{detail}]" if detail else ""))
+    # surface each failure as a GitHub annotation, so a red run says what
+    # broke without anyone having to open the log
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        plat = f"{sys.platform} py{sys.version_info.major}.{sys.version_info.minor}"
+        for name, detail in FAIL:
+            msg = f"{name}" + (f" -- {detail}" if detail else "")
+            msg = msg.replace("\n", " ")[:400]
+            print(f"::error title=zoomcut ({plat})::{msg}")
 shutil.rmtree(TMP, ignore_errors=True)
 sys.exit(1 if FAIL else 0)

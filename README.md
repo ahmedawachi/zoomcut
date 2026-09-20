@@ -267,11 +267,15 @@ keys are rebuilt for you. `zoom: 1.0` always means the whole, uncropped window; 
 ## Tests
 
 ```bash
-python3 tests/test_all.py            # everything (needs a desktop session)
-python3 tests/test_all.py --quick    # skips wallpapers, window list, live recording
+python3 tests/test_all.py             # everything (needs a desktop session)
+python3 tests/test_all.py --quick     # skips wallpapers, window list, live recording
+python3 tools/sim_platform.py linux   # run the suite as if this were Linux
 ```
 
-**136 checks.** CI runs them on **macOS, Windows and Linux**, and on Linux and Windows it goes
+**136 checks.** `sim_platform.py` flips the platform flags so the Windows and Linux
+branches of our own logic can be exercised from any machine — it is how the "this machine has no
+wallpapers installed" assumption was caught before it reached a server image. CI then runs the
+suite for real on **macOS, Windows and Linux**, and on Linux and Windows it goes
 further: it records for real (Linux under a virtual X display), auto-cuts that capture and
 renders it, so the whole cycle is exercised on each platform every push.
 

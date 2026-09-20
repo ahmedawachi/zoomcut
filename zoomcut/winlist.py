@@ -207,13 +207,22 @@ def _linux_windows() -> list[dict]:
 
 # ---------------------------------------------------------------- public
 def list_windows() -> list[dict]:
-    if IS_MAC:
-        return _mac_windows()
-    if IS_WIN:
-        return _win_windows()
-    if IS_LINUX:
-        return _linux_windows()
-    raise WindowListError(f"window listing is not supported on {os.name}")
+    """Every on-screen window, or WindowListError explaining why we cannot say.
+
+    Anything the platform backend throws is wrapped: callers should be able to
+    fall back to region capture on one exception type, not guess at whatever
+    ctypes or a missing helper decided to raise.
+    """
+    backend = (_mac_windows if IS_MAC else _win_windows if IS_WIN
+               else _linux_windows if IS_LINUX else None)
+    if backend is None:
+        raise WindowListError(f"window listing is not supported on {os.name}")
+    try:
+        return backend()
+    except WindowListError:
+        raise
+    except Exception as e:
+        raise WindowListError(f"could not list windows: {type(e).__name__}: {e}") from e
 
 
 def pickable(min_size: int = 200) -> list[dict]:
