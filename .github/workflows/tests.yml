@@ -57,7 +57,8 @@ jobs:
           xvfb-run -a --server-args="-screen 0 1280x800x24" python -m zoomcut record \
             --mode region --region 0,0,640,480 --seconds 3 -o /tmp/cap.mkv
           python -m zoomcut auto /tmp/cap.mkv -o /tmp/out.mp4 --preview --size 1080p
-          python -c "from zoomcut.util import probe; i = probe('/tmp/out.mp4'); print(i); assert i['duration'] > 1.0 and i['width'] == 1920"
+          # --preview renders a 1280-wide draft regardless of --size
+          python -c "from zoomcut.util import probe; i = probe('/tmp/out.mp4'); print(i); assert i['duration'] > 1.0 and i['width'] == 1280, i"
 
       # Same on Windows, where the runner has a real desktop session.
       - name: Record → auto-cut → render (Windows)
@@ -68,4 +69,4 @@ jobs:
           python -m zoomcut record --mode region --region 0,0,640,480 --seconds 3 -o cap.mkv
           python -m zoomcut auto cap.mkv -o out.mp4 --preview --size 1080p
           test -s out.mp4
-          python -c "from zoomcut.util import probe; i=probe('out.mp4'); print(i); assert i['duration']>1.0"
+          python -c "from zoomcut.util import probe; i=probe('out.mp4'); print(i); assert i['duration']>1.0 and i['width']==1280, i"
