@@ -14,7 +14,7 @@ pixels again.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
-import subprocess
+import math, subprocess
 import numpy as np
 
 from .util import probe, ffmpeg, ZoomcutError
@@ -42,8 +42,10 @@ class Analysis:
     energy: list[float] = field(default_factory=list)
     bbox: list[list[float]] = field(default_factory=list)   # x0,y0,x1,y1 normalised
     cuts: list[float] = field(default_factory=list)
-    # per-cell change magnitudes, (N, gh, gw) float32, one row per entry in
-    # .times. Kept in memory for the director's heat maps; never serialised.
+    # per-cell change magnitudes, (N, gh, gw) uint8 - they are whole levels
+    # 0..255, so 8 bits hold them exactly at a quarter of float32's memory.
+    # One row per entry in .times. Kept for the director's heat maps (the
+    # server keeps it while you edit); never serialised.
     diffs: object = None
     # how "busy" each column / row of the interface is (mean gradient of the
     # average frame). The director uses this to avoid putting a crop edge
@@ -66,7 +68,8 @@ class Analysis:
         m = (t >= t0) & (t < t1)
         if not m.any():
             return None
-        h = self.diffs[m].sum(axis=0)
+        # summed in float32, exactly as when diffs were stored as float32
+        h = self.diffs[m].sum(axis=0, dtype=np.float32)
         return h if float(h.sum()) > 0 else None
 
 
@@ -93,15 +96,23 @@ def analyze(path: str, afps: int = ANALYSIS_FPS, grid_w: int = GRID_W) -> Analys
     sw, sh = info["width"], info["height"]
     gw = int(grid_w)
     gh = max(8, int(round(gw * sh / sw)))
-    frames = _decode_gray(path, afps, gw, gh).astype(np.int16)
+    frames = _decode_gray(path, afps, gw, gh)                    # uint8
 
-    diffs = np.abs(np.diff(frames, axis=0)).astype(np.float32)   # (N-1, gh, gw)
-    n = diffs.shape[0]
+    # |frame - previous| in 8 bits, a chunk at a time: a 10-minute recording
+    # used to peak at 1.6 GB here, almost all of it float32 copies of values
+    # that are whole numbers 0..255. The arithmetic below that reaches the
+    # director stays in float32, so the plan comes out bit-for-bit the same.
+    n = len(frames) - 1
+    diffs = np.empty((max(n, 0), gh, gw), dtype=np.uint8)            # (N-1, gh, gw)
+    for i in range(0, max(n, 0), 2048):
+        chunk = frames[i:i + 2049].astype(np.int16)
+        diffs[i:i + 2048] = np.abs(np.diff(chunk, axis=0))
     times = [(i + 1) / afps for i in range(n)]
 
-    global_motion = diffs.reshape(n, -1).mean(axis=1)
+    flat = diffs.reshape(n, -1)
+    global_motion = flat.mean(axis=1, dtype=np.float32)
 
-    peak = diffs.reshape(n, -1).max(axis=1)
+    peak = flat.max(axis=1).astype(np.float32)
     thresh = np.maximum(CELL_FLOOR, peak * CELL_REL)[:, None, None]
     active = diffs >= thresh
 
@@ -115,7 +126,7 @@ def analyze(path: str, afps: int = ANALYSIS_FPS, grid_w: int = GRID_W) -> Analys
             energy[i] = 0.0
             bboxes[i] = (0.0, 0.0, 1.0, 1.0)
             continue
-        w = diffs[i][m]
+        w = diffs[i][m].astype(np.float32)
         energy[i] = float(w.mean() * cnt / (gw * gh))
         cx, cy = xs[m].astype(np.float32), ys[m].astype(np.float32)
         # weighted percentiles keep one stray cell from blowing the box open
@@ -131,7 +142,9 @@ def analyze(path: str, afps: int = ANALYSIS_FPS, grid_w: int = GRID_W) -> Analys
 
     cuts = _find_cuts(global_motion, times)
 
-    masked = np.where(active, diffs, 0.0).astype(np.float32)
+    np.multiply(diffs, active, out=diffs)          # keep only the active cells, in place
+    masked = diffs
+    del active
     mean_frame = frames.mean(axis=0).astype(np.float32)
     gx = np.zeros(gw, dtype=np.float32)
     gx[1:] = np.abs(np.diff(mean_frame, axis=1)).mean(axis=0)
@@ -146,6 +159,30 @@ def analyze(path: str, afps: int = ANALYSIS_FPS, grid_w: int = GRID_W) -> Analys
         bbox=[[float(v) for v in b] for b in bboxes],
         cuts=cuts,
     )
+
+
+def activity_track(a: Analysis, rate: float = 10.0, max_points: int = 1500) -> dict:
+    """How busy the screen is over time, for the editor's timeline.
+
+    Each bin keeps the MAX energy of its samples, so a single click still
+    shows as a spike instead of being averaged away. Scaled by the 98th
+    percentile rather than the peak, so one full-screen change does not
+    flatten everything else to nothing.
+    """
+    dur = float(a.duration or 0.0)
+    dt = max(1.0 / rate, dur / max_points)
+    n = max(1, int(math.ceil(dur / dt - 1e-9))) if dur > 0 else 0
+    v = np.zeros(n, dtype=np.float64)
+    if n and a.times:
+        t = np.asarray(a.times, dtype=np.float64)
+        e = np.asarray(a.energy, dtype=np.float64)
+        idx = np.clip((t / dt).astype(np.int64), 0, n - 1)
+        np.maximum.at(v, idx, e)
+    nz = v[v > 0]
+    if nz.size:
+        ref = float(np.percentile(nz, 98)) or float(nz.max())
+        v = np.clip(v / ref, 0.0, 1.0)
+    return {"t0": 0.0, "dt": dt, "v": [round(float(x), 3) for x in v]}
 
 
 def _find_cuts(gm: np.ndarray, times: list[float]) -> list[float]:

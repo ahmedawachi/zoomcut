@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse, json, os, signal, sys, time
 
 from . import wallpapers
-from .analyze import analyze
+from .analyze import analyze, activity_track
 from .director import DirectorConfig, plan, keyframes
 from .project import new_project, save, load, import_style_preset, PRESETS, _deep_update
 from .render import render, still
@@ -55,7 +55,8 @@ def _build(source: str, a) -> dict:
             pj["camera"]["spring"] = imported["spring"]
         if getattr(a, "preset_zooms", False) and imported["manualKeys"]:
             pj["camera"]["keys"] = imported["manualKeys"]
-    pj["analysis"] = {"cuts": an.cuts, "duration": an.duration}
+    pj["analysis"] = {"cuts": an.cuts, "duration": an.duration,
+                      "activity": activity_track(an)}
     return pj
 
 

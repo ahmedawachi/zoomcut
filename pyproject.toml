@@ -39,4 +39,4 @@ zoomcut = "zoomcut.cli:main"
 packages = ["zoomcut"]
 
 [tool.setuptools.package-data]
-zoomcut = ["web/*.html"]
+zoomcut = ["web/*"]

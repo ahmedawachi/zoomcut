@@ -33,7 +33,7 @@ zoomcut            # opens the app in your browser
 Pick a window. Hit record. Hit stop. That's the whole workflow.
 
 <div align="center">
-<img src="docs/screenshot-app.png" alt="The Zoomcut app: capture, auto-cut, look, preview and the shot timeline" width="100%">
+<img src="docs/screenshot-app.png" alt="The Zoomcut editor: a live preview, the look inspector and a timeline of zooms" width="100%">
 </div>
 
 Zoomcut is an open-source **screen recorder with automatic zoom** for **macOS, Windows and
@@ -44,7 +44,9 @@ without opening a video editor.
 - **Finds the moments worth zooming into** and holds still the rest of the time
 - **Puts your recording on your desktop wallpaper** with rounded corners and a soft shadow
 - **Spring-driven camera moves** that settle like physics, not like a tween
-- **Edit any shot** in a visual timeline, or hand-edit the plain-JSON project
+- **A real editor when you want one** — a live preview that plays the camera moves exactly as
+  they will export, zooms you drag, stretch and reframe on a timeline, undo for everything
+- **Or no editor at all** — the project is plain JSON, and the command line does it all
 - **Exports 1080p / 1440p / 4K** h.264, ready to drop into a PR or a release note
 - **Runs entirely on your machine** — no account, no upload, no telemetry
 
@@ -190,13 +192,24 @@ zoomcut              # same as: zoomcut ui
 
 Opens `http://127.0.0.1:8765`.
 
-| Step | What you do |
+**Start** by recording — pick a window from a searchable list, a display or a region; a
+three-second countdown gives you time to switch to it — or drop a recording you already have
+anywhere on the page. Your recent recordings, projects and exports are one click away.
+
+**Then edit**, or don't — Zoomcut has already placed the zooms by the time the editor opens.
+
+| | |
 |---|---|
-| **1 · Capture** | Pick **a window** (searchable list of every real window), a display, or a region. Record → Stop. |
-| **2 · Source** | Or drop a recording you already have anywhere on the page. |
-| **3 · Look** | Pick a wallpaper from your own desktop pictures, or a gradient. Dim, blur and padding are sliders. |
-| **4 · Preview** | Scrub anywhere for a live composited frame, render a 720p draft, or export at full quality. |
-| **5 · Shots** | The camera plan as a timeline — bar height is zoom. Click a shot to retune it; the render follows. |
+| **Preview** | Plays the recording with the camera moving exactly as the export will — the same spring, the same framing, composited live in the browser. <kbd>F</kbd> swaps in a frame rendered by the real compositor, to check. |
+| **Timeline** | A filmstrip, the zoom track and an activity trace, with view changes marked. Hover the zoom track and click to add a zoom; drag a zoom to move it, drag its edges to stretch it, <kbd>S</kbd> splits it. Drag the ends of the clip to trim. Everything snaps, and pinch or <kbd>⌘</kbd>-scroll zooms the timeline. |
+| **Framing** | Select a zoom and drag the preview itself to reframe it, scroll over it to zoom further, or drag the box over the whole frame in the inspector. Double-click the preview to zoom to that point. |
+| **Look** | Your own desktop pictures, a gradient, a colour or any image; padding, roundness and shadow; 16:9, 4:3, 1:1 or 9:16. |
+| **Motion** | Snappy, balanced, smooth or lazy camera springs, with the curve they follow. |
+| **Auto zoom** | Re-run the director as subtle, balanced or punchy — it only replaces the zooms, and undo brings them back. |
+| **Export** | 1080p, 1440p or 4K at 30 or 60 fps, with a quick 1280-wide draft; cancel any time, then play the result or show it in its folder. |
+
+Every change can be undone (<kbd>⌘Z</kbd>), <kbd>?</kbd> lists the keyboard shortcuts, and the
+last look you used is where the next recording starts.
 
 Finished files go to `~/Movies/Zoomcut` (macOS), `%USERPROFILE%\Videos\Zoomcut` (Windows) or
 `~/Videos/Zoomcut` (Linux).
@@ -349,7 +362,7 @@ python3 tests/test_all.py --quick     # skips wallpapers, window list, live reco
 python3 tools/sim_platform.py linux   # run the suite as if this were Linux
 ```
 
-**140 checks.** `sim_platform.py` flips the platform flags so the Windows and Linux
+**308 checks.** `sim_platform.py` flips the platform flags so the Windows and Linux
 branches of our own logic can be exercised from any machine — it is how the "this machine has no
 wallpapers installed" assumption was caught before it reached a server image. CI then runs the
 suite for real on **macOS, Windows and Linux**, and on Linux and Windows it goes
@@ -365,6 +378,12 @@ builders; style-preset import; wallpaper discovery; the renderer including trims
 check; and every web endpoint, including confirming that `/etc/passwd` and `~/.ssh/id_rsa` are
 *not* servable and that video is served with `Range` support so it can seek.
 
+The editor is held to the same standard: its camera (`web/camera.js`) is run under Node and
+compared with the renderer frame by frame, so the preview cannot drift from the export. The
+local server refuses requests from other websites — a page you visit cannot start a recording or
+read your files — uploads are checked and never overwrite anything, a failed or cancelled export
+never costs you a file that was already there, and the preview's caches stay bounded.
+
 Regenerate the documentation images with `python3 tools/make_docs.py` and the brand assets with
 `python3 tools/make_brand.py`. The screenshots use a synthetic recording and a fixed window list
 (`ZOOMCUT_DEMO=1`), so nobody's real screen ends up in the repository.
@@ -379,7 +398,7 @@ Run `zoomcut doctor` first — it names anything missing and how to install it.
 | "no X11 display found" (Linux) | You're on Wayland — log in with an Xorg session |
 | Window list is empty (Linux) | `sudo apt install wmctrl`, or record a region instead |
 | `ffmpeg was not found` | Install it, or point Zoomcut at it with `ZOOMCUT_FFMPEG=/path/to/ffmpeg` |
-| The camera zooms somewhere odd | Something else on screen was moving — a clock, a notification. Click the shot in the timeline and retune it, or raise `--min-shot` |
+| The camera zooms somewhere odd | Something else on screen was moving — a clock, a notification. Select that zoom on the timeline and drag the preview to reframe it, or delete it; on the command line, raise `--min-shot` |
 | Too much zooming | Lower `--max-zoom`, or raise `--min-zoom` so marginal moves stay wide |
 | Zooms feel too tight | Raise `--context` |
 | Nothing zooms at all | The whole screen was changing at once, so every beat is a cut. Lower `--wide-hold` |
@@ -400,7 +419,8 @@ with no `pyobjc` or `pywin32`.
 | `winlist.py` | window enumeration: CoreGraphics, EnumWindows, wmctrl/xdotool |
 | `wallpapers.py` | finds and caches the wallpapers installed on your machine |
 | `project.py` | the project file, and style-preset import |
-| `server.py` + `web/` | the local app |
+| `media.py` | the editor's preview proxy, filmstrip and recents posters, in a bounded cache |
+| `server.py` + `web/` | the local app: a stdlib server and a dependency-free editor |
 
 Releases are built by [`release.yml`](.github/workflows/release.yml): PyInstaller folder builds
 for macOS (arm64 and x86_64), Windows and Linux, plus a wheel and sdist. Folder builds, not

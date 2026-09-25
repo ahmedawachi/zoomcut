@@ -9,6 +9,7 @@ Anything Pillow can already open is used as-is; only the formats it cannot
 """
 from __future__ import annotations
 import glob, os, shutil
+import threading
 from pathlib import Path
 
 from .util import IS_MAC, IS_WIN, IS_LINUX, ffmpeg, run, cache_dir, probe, ZoomcutError
@@ -144,34 +145,44 @@ def materialise(name_or_path: str) -> str:
     if Path(entry["source"]).suffix.lower() in DIRECT_SUFFIXES:
         return entry["source"]
 
-    dst = Path(entry["cached"])
-    if dst.exists() and dst.stat().st_size > 0:
-        return str(dst)
-    dst.parent.mkdir(parents=True, exist_ok=True)
+    final = Path(entry["cached"])
+    if final.exists() and final.stat().st_size > 0:
+        return str(final)
+    final.parent.mkdir(parents=True, exist_ok=True)
     src = entry["source"]
+    # decode into a private temp name and move it into place when complete:
+    # a second caller must never open a half-written cache file
+    dst = final.with_name(f"{final.stem}.{os.getpid()}.{threading.get_ident()}.part.png")
 
     if entry["kind"] == "dynamic":
         dur = probe(src)["duration"] or 1.0
         p = run([ffmpeg(), "-nostdin", "-v", "error", "-ss", f"{dur * DYNAMIC_FRAME_RATIO:.2f}",
                  "-i", src, "-frames:v", "1", "-y", str(dst)])
         if p.returncode != 0 or not dst.exists():
+            dst.unlink(missing_ok=True)
             raise ZoomcutError(f"could not extract a frame from {src}:\n{(p.stderr or '')[:400]}")
-        return str(dst)
+        return _publish(dst, final)
 
     if IS_MAC and shutil.which("sips"):
         p = run(["sips", "-s", "format", "png", "--resampleWidth", str(MAX_WIDTH),
                  src, "--out", str(dst)])
         if p.returncode == 0 and dst.exists():
-            return str(dst)
+            return _publish(dst, final)
     # ffmpeg reads HEIC and most raw formats too
     p = run([ffmpeg(), "-nostdin", "-v", "error", "-i", src, "-frames:v", "1", "-y", str(dst)])
     if p.returncode != 0 or not dst.exists():
         try:                                    # last resort: let Pillow try
             from PIL import Image
-            Image.open(src).convert("RGB").save(dst)
+            Image.open(src).convert("RGB").save(dst, "PNG")
         except Exception:
+            dst.unlink(missing_ok=True)
             raise ZoomcutError(f"could not decode wallpaper {src}")
-    return str(dst)
+    return _publish(dst, final)
+
+
+def _publish(tmp: Path, final: Path) -> str:
+    os.replace(tmp, final)
+    return str(final)
 
 
 def default_name() -> str | None:
@@ -213,7 +224,10 @@ def thumbnail(name_or_path: str, w: int = 224, h: int = 126) -> str:
     """
     from PIL import Image
     entry = resolve(name_or_path)
-    dst = Path(cache_dir()) / "thumbs" / f"{_safe(entry['name'])}_{w}x{h}.jpg"
+    # "_rgb": dynamic thumbnails used to go straight to JPEG, which read the
+    # video's BT.709 colour as BT.601 and came out warmer than the render
+    tag = "_rgb" if entry["kind"] == "dynamic" else ""
+    dst = Path(cache_dir()) / "thumbs" / f"{_safe(entry['name'])}_{w}x{h}{tag}.jpg"
     if dst.exists() and dst.stat().st_size > 0:
         return str(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -233,12 +247,18 @@ def thumbnail(name_or_path: str, w: int = 224, h: int = 126) -> str:
             dur = probe(src)["duration"] or 1.0
         except ZoomcutError:
             dur = 1.0
+        # through RGB, exactly as materialise() decodes it for the render, so
+        # the preview's background is the colour the export's will be
+        tmp = dst.with_suffix(".src.png")
         p = run([ffmpeg(), "-nostdin", "-v", "error", "-ss",
                  f"{dur * DYNAMIC_FRAME_RATIO:.2f}", "-i", src, "-frames:v", "1",
                  "-vf", f"scale={w}:{h}:force_original_aspect_ratio=increase,"
-                        f"crop={w}:{h}", "-q:v", "4", "-y", str(dst)])
-        if p.returncode == 0 and dst.exists() and dst.stat().st_size > 0:
+                        f"crop={w}:{h},format=rgb24", "-y", str(tmp)])
+        if p.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+            Image.open(tmp).convert("RGB").save(dst, "JPEG", quality=88)
+            tmp.unlink(missing_ok=True)
             return str(dst)
+        tmp.unlink(missing_ok=True)
 
     # HEIC: sips resamples as it decodes. ffmpeg refuses a simple -vf on
     # Apple's tiled HEICs ("simple and complex filtering cannot be used

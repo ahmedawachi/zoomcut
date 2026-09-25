@@ -204,8 +204,54 @@ class Stage:
 # --------------------------------------------------------------------------
 # render
 # --------------------------------------------------------------------------
+def _partial(out_path: str) -> str:
+    """Where a render is written until it has finished: hidden, beside the
+    target, same extension so ffmpeg picks the same muxer."""
+    d, b = os.path.split(out_path)
+    root, ext = os.path.splitext(b)
+    return os.path.join(d, f".{root}.partial{ext}")
+
+
+def _remove(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _kill(*procs: subprocess.Popen) -> None:
+    """Kill and reap. Pipes are closed only once the process is dead, so a
+    flush into a dead encoder fails fast instead of blocking."""
+    for p in procs:
+        if p.poll() is None:
+            try:
+                p.kill()
+            except OSError:
+                pass
+    for p in procs:
+        for pipe in (p.stdin, p.stdout):
+            if pipe and not pipe.closed:
+                try:
+                    pipe.close()
+                except OSError:
+                    pass
+        try:
+            p.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+
+
 def render(project: dict, out_path: str, preview: bool = False,
-           progress: Callable[[int, int], None] | None = None) -> str:
+           progress: Callable[[int, int], None] | None = None,
+           cancel: Callable[[], bool] | None = None) -> str:
+    """Render project to out_path. `cancel` is polled once per frame.
+
+    The video is written beside out_path under a hidden name and moved into
+    place only once it is complete. If anything goes wrong - including a
+    cancel - both ffmpegs are killed and only that partial file is deleted: a
+    failed export never sits in the folder looking finished, and never costs
+    you a file that was already at out_path.
+    """
     src_path = project["source"]
     if not os.path.isfile(src_path):
         raise ZoomcutError(f"source recording not found: {src_path}")
@@ -237,6 +283,7 @@ def render(project: dict, out_path: str, preview: bool = False,
     s_x = Spring(cx0, k, m, c)
     s_y = Spring(cy0, k, m, c)
 
+    tmp = _partial(out_path)
     dec_cmd = [ffmpeg(), "-nostdin", "-v", "error"]
     if t0 > 0:
         dec_cmd += ["-ss", f"{t0:.4f}"]
@@ -249,15 +296,22 @@ def render(project: dict, out_path: str, preview: bool = False,
                "-pix_fmt", "yuv420p",
                "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
                "-x264-params", "aq-mode=3:aq-strength=1.0",
-               "-movflags", "+faststart", out_path]
+               "-movflags", "+faststart", tmp]
 
     resample = Image.BICUBIC if preview else Image.LANCZOS
     fsize = sw * sh * 3
     dec = subprocess.Popen(dec_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10 ** 8)
-    enc = subprocess.Popen(enc_cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10 ** 8)
+    try:
+        enc = subprocess.Popen(enc_cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10 ** 8)
+    except BaseException:
+        _kill(dec)
+        dec.stderr.close()
+        raise
     n = 0
     try:
         while True:
+            if cancel and cancel():
+                raise ZoomcutError("render cancelled")
             buf = dec.stdout.read(fsize)
             if len(buf) < fsize:
                 break
@@ -271,21 +325,34 @@ def render(project: dict, out_path: str, preview: bool = False,
             n += 1
             if progress and n % 30 == 0:
                 progress(n, total)
-    except BrokenPipeError:
-        raise ZoomcutError("ffmpeg encoder exited early:\n"
-                           + enc.stderr.read().decode(errors="replace")[:1500])
-    finally:
-        if enc.stdin and not enc.stdin.closed:
-            enc.stdin.close()
-        dec.stdout.close()
+        # inside the try: this flushes the last frames, and a dead encoder
+        # must be handled like any other failure
+        enc.stdin.close()
+    except BaseException as e:
+        _kill(dec, enc)
+        why = enc.stderr.read().decode(errors="replace")[:1500] if isinstance(e, BrokenPipeError) else ""
+        dec.stderr.close()
+        enc.stderr.close()
+        _remove(tmp)
+        if isinstance(e, BrokenPipeError):
+            raise ZoomcutError("ffmpeg encoder exited early:\n" + why) from None
+        raise
+    dec.stdout.close()
     dec_err = dec.stderr.read().decode(errors="replace")
     enc_err = enc.stderr.read().decode(errors="replace")
     dec.wait()
     rc = enc.wait()
-    if rc != 0 or not os.path.exists(out_path):
+    if rc != 0 or not os.path.exists(tmp):
+        _remove(tmp)
         raise ZoomcutError(f"encode failed (rc={rc}):\n{enc_err[:1500]}\n{dec_err[:500]}")
     if n == 0:
+        _remove(tmp)
         raise ZoomcutError("no frames were decoded from the source")
+    try:
+        os.replace(tmp, out_path)
+    except OSError as e:          # Windows: the old export is open in a player
+        _remove(tmp)
+        raise ZoomcutError(f"could not write {out_path}: {e.strerror or e} - is it open somewhere?")
     if progress:
         progress(n, total)
     return out_path

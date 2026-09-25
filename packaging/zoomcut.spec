@@ -22,10 +22,12 @@ elif os.name == "nt" and os.path.exists(os.path.join(DOCS, "zoomcut.ico")):
 a = Analysis(
     [os.path.join(ROOT, "packaging", "launcher.py")],
     pathex=[ROOT],
-    datas=[(os.path.join(ROOT, "zoomcut", "web", "index.html"), "zoomcut/web")],
+    # the whole folder: the app is index.html plus its scripts and styles
+    datas=[(os.path.join(ROOT, "zoomcut", "web"), "zoomcut/web")],
     hiddenimports=["zoomcut", "zoomcut.cli", "zoomcut.server", "zoomcut.recorder",
                    "zoomcut.winlist", "zoomcut.wallpapers", "zoomcut.render",
-                   "zoomcut.analyze", "zoomcut.director", "zoomcut.project"],
+                   "zoomcut.analyze", "zoomcut.director", "zoomcut.project",
+                   "zoomcut.media"],
     hookspath=[], runtime_hooks=[],
     excludes=["tkinter", "matplotlib", "pytest", "setuptools", "pip"],
     noarchive=False,

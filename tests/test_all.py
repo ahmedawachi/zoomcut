@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Zoomcut end-to-end test suite. Run: python3 tests/test_all.py"""
 from __future__ import annotations
-import json, os, shutil, subprocess, sys, tempfile, threading, time
+import http.client, json, math, os, shutil, socket, subprocess, sys, tempfile, threading, time
 import urllib.parse
 import urllib.request, urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from zoomcut.analyze import analyze
+from zoomcut.analyze import analyze, activity_track, Analysis
 from zoomcut.director import plan, keyframes, DirectorConfig
 from zoomcut.project import new_project, save, load, import_style_preset
 from zoomcut.render import render, still, crop_box, target_at, Spring
@@ -110,6 +110,11 @@ check("target_at survives an empty key list", target_at([], 3.0) == (1.0, 0.5, 0
 
 # ==========================================================================
 section("2 · analysis + director on synthetic clips")
+_a8 = analyze(os.path.join(ROOT, "docs", "demo-recording.mp4"))
+check("analysis keeps its per-cell changes in 8 bits (a quarter of float32)",
+      str(_a8.diffs.dtype) == "uint8", str(_a8.diffs.dtype))
+check("...and still hands the director float32 heat",
+      str(_a8.heat(0, _a8.duration).dtype) == "float32")
 clips = {}
 clips["static"] = mkclip(os.path.join(TMP, "static.mp4"), "color=c=0x101418:s=640x400")
 clips["one cut"] = mkclip(os.path.join(TMP, "onecut.mp4"),
@@ -149,6 +154,28 @@ if zoomed:
     check("...and the action is fully inside the crop, not sliced",
           (s0.cx - h) <= 0.14 and (s0.cx + h) >= 0.37,
           f"crop x [{s0.cx-h:.3f},{s0.cx+h:.3f}]")
+
+# the editor's activity lane
+_mv = analyze(clips["moving box"])
+tr = activity_track(_mv)
+check("activity track: 10 bins a second from t=0",
+      tr["t0"] == 0.0 and abs(tr["dt"] - 0.1) < 1e-9, f"t0={tr['t0']} dt={tr['dt']}")
+check("activity track: covers the whole clip",
+      len(tr["v"]) == math.ceil(_mv.duration / tr["dt"] - 1e-9), f"{len(tr['v'])} bins")
+check("activity track: normalised to [0, 1], peak at 1",
+      all(0.0 <= v <= 1.0 for v in tr["v"]) and max(tr["v"]) == 1.0, str(max(tr["v"])))
+check("activity track: a dead-still clip is flat zero",
+      set(activity_track(analyze(clips["static"]))["v"]) <= {0.0})
+_syn = Analysis(path="", width=1, height=1, duration=0.2, afps=20, grid=(1, 1),
+                times=[0.02, 0.07, 0.12, 0.17], energy=[0.2, 1.0, 0.6, 0.6])
+_sv = activity_track(_syn)["v"]
+check("activity track: a bin keeps its spike (max, not mean)",
+      len(_sv) == 2 and _sv[0] == 1.0 and abs(_sv[1] - 0.605) < 0.002, str(_sv))
+_long = Analysis(path="", width=1, height=1, duration=1000.0, afps=20, grid=(1, 1),
+                 times=[i / 20 for i in range(1, 20000)], energy=[0.0] * 19999)
+_lt = activity_track(_long)
+check("activity track: a long clip is capped at max_points",
+      len(_lt["v"]) == 1500 and abs(_lt["dt"] - 1000 / 1500) < 1e-9, f"{len(_lt['v'])} bins")
 
 # ==========================================================================
 section("3 · edge cases that would ruin a first run")
@@ -238,6 +265,22 @@ else:
         check("unknown wallpaper raises", False)
     except ZoomcutError:
         check("unknown wallpaper raises", True)
+    # the editor's preview background is the thumbnail, the export's is the
+    # full decode: for a video wallpaper they once came out in different colours
+    _dyn = next((w["name"] for w in ws if w["kind"] == "dynamic"), None)
+    if not _dyn:
+        skip("a video wallpaper's preview has the export's colour", "no video wallpapers here")
+    else:
+        import numpy as _np
+        from PIL import Image as _PImg
+        from zoomcut.render import _cover
+        _full = _np.asarray(_cover(_PImg.open(wallpapers.materialise(_dyn)).convert("RGB"), 640, 400), _np.float32)
+        _thumb = _np.asarray(_PImg.open(wallpapers.thumbnail(_dyn, 640, 400)).convert("RGB"), _np.float32)
+        # a hue shift, not brightness: BT.709 read as BT.601 lifts red and
+        # green and drops blue (~7 levels apart); resampling moves all three alike
+        _bias = (_thumb - _full).reshape(-1, 3).mean(axis=0)
+        check("a video wallpaper's preview has the export's colour",
+              float(_bias.max() - _bias.min()) < 1.5, f"per-channel bias {_bias.round(2).tolist()}")
 
 # ==========================================================================
 section("6 \u00b7 window listing")
@@ -280,6 +323,74 @@ try:
     check("missing source fails loudly", False)
 except ZoomcutError:
     check("missing source fails loudly", True)
+
+# cancelling, or any failure mid-render, must leave neither a half-written
+# mp4 nor an ffmpeg behind. Popen is wrapped to see every process render()
+# starts.
+import zoomcut.render as _R
+_spawned = []
+_RealPopen = _R.subprocess.Popen
+
+
+class _TrackedPopen(_RealPopen):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        _spawned.append(self)
+
+
+def _render_fails(label, want, **kw):
+    """render() raises `want`, removes its output and reaps both ffmpegs."""
+    _spawned.clear()
+    outp = os.path.join(TMP, "abort.mp4")
+    _R.subprocess.Popen = _TrackedPopen
+    try:
+        render(pj, outp, **kw)
+        check(f"{label}: raises", False, "render finished")
+    except want as e:
+        check(f"{label}: raises {want.__name__}", True)
+    except Exception as e:
+        check(f"{label}: raises {want.__name__}", False, repr(e))
+    finally:
+        _R.subprocess.Popen = _RealPopen
+    check(f"{label}: no partial file is left",
+          not os.path.exists(outp) and not os.path.exists(os.path.join(TMP, ".abort.partial.mp4")))
+    # other helpers (wallpaper discovery, say) may run too: count the ffmpegs
+    ff = [p for p in _spawned if "ffmpeg" in os.path.basename(str(p.args[0]))]
+    check(f"{label}: no ffmpeg is left running",
+          len(ff) == 2 and all(p.poll() is not None for p in _spawned),
+          f"{[(os.path.basename(str(p.args[0])), p.poll()) for p in _spawned]}")
+
+
+_render_fails("cancel before the first frame", ZoomcutError, cancel=lambda: True)
+_ticks = {"n": 0}
+
+
+def _cancel_later():
+    _ticks["n"] += 1
+    return _ticks["n"] > 40
+
+
+_render_fails("cancel part-way through", ZoomcutError, cancel=_cancel_later)
+
+
+def _boom(n, total):
+    raise ValueError("progress callback failed")
+
+
+_render_fails("any exception mid-render", ValueError, progress=_boom)
+_keep = os.path.join(TMP, "keep-me.mp4")
+with open(_keep, "wb") as f:
+    f.write(b"an earlier export")
+try:
+    render(pj, _keep, cancel=lambda: True)
+except ZoomcutError:
+    pass
+with open(_keep, "rb") as f:
+    check("a failed render never costs the file already at its path", f.read() == b"an earlier export")
+check("...and leaves no hidden partial beside it", not os.path.exists(os.path.join(TMP, ".keep-me.partial.mp4")))
+render(pj, out)
+check("a normal render still works after an aborted one",
+      (probe(out)["width"], probe(out)["height"]) == (1280, 720))
 
 # Banding: the background never moves, so anything h264 posterises there
 # sits on screen for the whole clip. An absolute pixel threshold is not
@@ -331,7 +442,16 @@ else:
 # ==========================================================================
 section("8 · web app (served on a throwaway port, shut down after)")
 from http.server import ThreadingHTTPServer
+import zoomcut
 import zoomcut.server as srv
+import zoomcut.media as media
+from PIL import Image as _Img
+
+# everything the app writes goes under TMP, never the real output folder or cache
+srv.OUT_DIR = os.path.join(TMP, "out")
+media.ROOT = os.path.join(TMP, "media")
+media.POSTERS = os.path.join(TMP, "posters")
+DEMO_CLIP = os.path.join(ROOT, "docs", "demo-recording.mp4")
 
 httpd = ThreadingHTTPServer(("127.0.0.1", 0), srv.Handler)
 PORT = httpd.server_address[1]
@@ -349,9 +469,10 @@ def get(path, headers=None):
         return e.code, e.read(), dict(e.headers)
 
 
-def post(path, obj):
+def post(path, obj, headers=None):
+    h = {"Content-Type": "application/json", **(headers or {})}
     req = urllib.request.Request(BASE + path, data=json.dumps(obj).encode(),
-                                 headers={"Content-Type": "application/json"}, method="POST")
+                                 headers=h, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=300) as r:
             return r.status, json.loads(r.read())
@@ -359,12 +480,153 @@ def post(path, obj):
         return e.code, json.loads(e.read() or b"{}")
 
 
+def raw(method, path, body=b"", headers=None, send=None):
+    """Full control over the request, for what urllib will not send."""
+    c = http.client.HTTPConnection("127.0.0.1", PORT, timeout=60)
+    try:
+        c.putrequest(method, path, skip_accept_encoding=True)
+        for k, v in (headers or {}).items():
+            c.putheader(k, v)
+        c.endheaders()
+        if send:
+            send(c.sock)
+        elif body:
+            c.send(body)
+        r = c.getresponse()
+        data = r.read()
+        return r.status, data, dict(r.getheaders())
+    finally:
+        c.close()
+
+
+def upload(name, data, headers=None):
+    h = {"X-Zoomcut-Upload": "1", "Content-Type": "application/octet-stream",
+         **(headers or {})}
+    req = urllib.request.Request(BASE + "/api/upload?name=" + urllib.parse.quote(name),
+                                 data=data, headers=h, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+
+def fileurl(p):
+    return "/api/file?path=" + urllib.parse.quote(p)
+
+
+def wait_media(timeout=180):
+    deadline = time.time() + timeout
+    m = {}
+    while time.time() < deadline:
+        m = json.loads(get("/api/media")[1])
+        if m.get("state") in ("ready", "error"):
+            break
+        time.sleep(0.25)
+    return m
+
+
+def wait_render(timeout=300):
+    deadline = time.time() + timeout
+    p = {}
+    while time.time() < deadline:
+        p = json.loads(get("/api/progress")[1])
+        if p.get("state") in ("done", "error", "cancelled"):
+            break
+        time.sleep(0.3)
+    return p
+
+
 try:
-    code, body, _ = get("/")
+    # ---------------------------------------------------------- hardening
+    code, body, hdrs = get("/api/state", {"Host": "evil.example"})
+    check("a foreign Host header is refused (DNS rebinding)",
+          code == 403 and json.loads(body).get("error") == "forbidden host", f"{code} {body[:80]}")
+    code, _, _ = get("/", {"Host": "evil.example:%d" % PORT})
+    check("...on every path, port or not", code == 403)
+    ok_hosts = [get("/api/state", {"Host": h})[0] for h in
+                (f"localhost:{PORT}", f"[::1]:{PORT}", "127.0.0.1", "LOCALHOST")]
+    check("loopback Host names are accepted", ok_hosts == [200] * 4, str(ok_hosts))
+    srv.HOSTS.add("10.9.8.7")                 # what serve(host="10.9.8.7") does
+    try:
+        code_b = get("/api/state", {"Host": f"10.9.8.7:{PORT}"})[0]
+    finally:
+        srv.HOSTS.discard("10.9.8.7")
+    check("an address the server was explicitly bound to is accepted too", code_b == 200, str(code_b))
+    code, j = post("/api/project", {}, {"Origin": "http://evil.example"})
+    check("a POST from a foreign Origin is refused",
+          code == 403 and j.get("error") == "forbidden origin", f"{code} {j}")
+    code, j = post("/api/project", {}, {"Origin": "null"})
+    check("a POST from an opaque (null) Origin is refused", code == 403, f"{code} {j}")
+    code, j = post("/api/project", {}, {"Origin": "http://[::1"})
+    check("a malformed Origin is refused, not a crash", code == 403, f"{code} {j}")
+    code, j = post("/api/project", {}, {"Origin": f"http://localhost:{PORT}"})
+    check("a POST from our own Origin gets through", code != 403, f"{code} {j}")
+    code, body, _ = raw("POST", "/api/project", b"{}",
+                        {"Content-Type": "text/plain", "Content-Length": "2"})
+    check("a JSON endpoint refuses a text/plain body (no preflight-free POSTs)",
+          code == 415 and json.loads(body).get("error") == "expected application/json",
+          f"{code} {body[:80]}")
+    code, body, _ = raw("POST", "/api/record/start", headers={"Content-Length": "0"})
+    check("a bare POST cannot start a recording", code == 415 and srv.S.rec is None, str(code))
+    code, j = post("/api/project", {}, {"Content-Type": "application/json; charset=utf-8"})
+    check("application/json with a charset is fine", code in (200, 400) and code != 415, str(code))
+    code, body, _ = raw("POST", "/api/project", b"{nope",
+                        {"Content-Type": "application/json", "Content-Length": "5"})
+    check("a malformed JSON body is a 400, not a 500", code == 400, f"{code} {body[:80]}")
+    code, body, hdrs = raw("POST", "/api/upload?name=x.mp4", b"abc",
+                           {"Content-Length": "3", "Content-Type": "video/mp4"})
+    check("an upload without X-Zoomcut-Upload is refused", code == 403, str(code))
+    code, body, hdrs = raw("OPTIONS", "/api/project", headers={
+        "Origin": "http://evil.example", "Access-Control-Request-Method": "POST"})
+    check("a CORS preflight is never granted",
+          not any(k.lower().startswith("access-control") for k in hdrs), str(hdrs))
+    xs = {label: get("/api/state", hd)[0] for label, hd in (
+        ("cross-site", {"Sec-Fetch-Site": "cross-site"}), ("same-site", {"Sec-Fetch-Site": "same-site"}),
+        ("foreign referer", {"Referer": "https://evil.example/page"}),
+        ("foreign origin", {"Origin": "https://evil.example"}))}
+    check("another site cannot use the API through GETs either (img, video, fetch)",
+          all(c == 403 for c in xs.values()), str(xs))
+    ok_src = [get("/api/state", hd)[0] for hd in ({"Sec-Fetch-Site": "same-origin"}, {"Sec-Fetch-Site": "none"},
+                                                  {"Referer": f"http://127.0.0.1:{PORT}/"})]
+    check("...while our own page and the address bar still can", ok_src == [200] * 3, str(ok_src))
+    code, _, hdrs = get("/", {"Sec-Fetch-Site": "cross-site"})
+    check("the page opens from a link but refuses to be framed",
+          code == 200 and hdrs.get("X-Frame-Options") == "DENY"
+          and "frame-ancestors 'none'" in hdrs.get("Content-Security-Policy", ""), str(hdrs))
+
+    # ---------------------------------------------------------- static
+    code, body, hdrs = get("/")
     check("GET / serves the app", code == 200 and b"Zoomcut" in body)
+    check("the page is served no-cache as HTML",
+          hdrs.get("Cache-Control") == "no-cache" and hdrs.get("Content-Type", "").startswith("text/html"),
+          str(hdrs))
+    code, body, _ = get("/index.html")
+    check("GET /index.html serves the app too", code == 200 and b"Zoomcut" in body)
+    for fname, ctype in (("app.js", "text/javascript; charset=utf-8"),
+                         ("app.css", "text/css; charset=utf-8")):
+        code, body, hdrs = get("/" + fname)
+        check(f"GET /{fname} is served as {ctype.split(';')[0]}",
+              code == 200 and hdrs.get("Content-Type") == ctype
+              and hdrs.get("Cache-Control") == "no-cache", f"{code} {hdrs.get('Content-Type')}")
+    bad = {p: get(p)[0] for p in ("/..%2fserver.py", "/zoomcut/server.py", "/server.py",
+                                  "/%2e%2e/server.py", "/APP.JS", "/nope.js", "/web/app.js")}
+    check("nothing outside web/ is served (traversal, subfolders, other types)",
+          all(c == 404 for c in bad.values()), str(bad))
+    code, body, hdrs = get("/nope.js")
+    check("a missing static file is a JSON 404",
+          code == 404 and hdrs.get("Content-Type") == "application/json")
+
+    # ---------------------------------------------------------- state
     code, body, _ = get("/api/state")
     st = json.loads(body)
     check("GET /api/state works", code == 200 and "permission" in st)
+    check("state carries the version", st.get("version") == zoomcut.__version__, str(st.get("version")))
+    check("state says whether clicks can be highlighted",
+          st.get("clicksSupported") is (srv.platform_name() == "macOS"), str(st.get("clicksSupported")))
+    check("idle progress has elapsed 0",
+          st["progress"].get("state") == "idle" and st["progress"].get("elapsed") == 0.0,
+          str(st["progress"]))
     code, body, _ = get("/api/wallpapers")
     wp_body = json.loads(body) if code == 200 else {}
     check("GET /api/wallpapers answers with a catalogue",
@@ -375,27 +637,108 @@ try:
     check("GET /api/windows lists windows", code == 200 and "windows" in json.loads(body))
     code, body, _ = get("/api/nope")
     check("unknown endpoint 404s cleanly", code == 404)
+    code, body, _ = get("/api/media")
+    m = json.loads(body)
+    check("GET /api/media with no project is idle",
+          code == 200 and m.get("state") == "idle" and m.get("source") is None, str(m))
+
+    # ---------------------------------------------------------- analyse
+    code, j = post("/api/analyze", {"source": clips["moving box"], "size": "1080p", "fps": 30,
+                                    "output": {"width": 1281, "height": 721, "fps": 24}})
+    out_o = (j.get("project") or {}).get("output", {})
+    check("analyse: an output object overrides size/fps (sanitised)",
+          code == 200 and (out_o.get("width"), out_o.get("height"), out_o.get("fps")) == (1280, 720, 24),
+          str(out_o))
+    code, j = post("/api/analyze", {"source": clips["moving box"], "output": {"preset": "warp"}})
+    check("analyse: a bad output is a 400", code == 400, f"{code} {j}")
 
     code, j = post("/api/analyze", {"source": clips["moving box"], "size": "1080p", "fps": 30})
     check("POST /api/analyze plans a project", code == 200 and j["project"]["camera"]["shots"],
           json.dumps(j)[:200])
     nshots = len(j["project"]["camera"]["shots"])
+    act = j["project"].get("analysis", {}).get("activity") or {}
+    check("the project carries an activity track",
+          act.get("t0") == 0.0 and act.get("dt", 0) > 0 and len(act.get("v", [])) > 10
+          and "cuts" in j["project"]["analysis"], str(act)[:120])
+    dur = j["project"]["sourceInfo"]["duration"]
+    code, j = post("/api/suggest", {"t0": 0.5, "t1": min(dur, 3.0)})
+    check("suggest frames the activity for a hand-placed zoom",
+          code == 200 and j.get("zoom", 0) >= 1.3
+          and all(0.5 / j["zoom"] - 1e-9 <= j[k] <= 1 - 0.5 / j["zoom"] + 1e-9 for k in ("cx", "cy")),
+          f"{code} {j}")
+    code, j = post("/api/suggest", {"t0": 2.0, "t1": 1.0})
+    check("a backwards suggest range is a 400", code == 400, f"{code} {j}")
 
     code, j = post("/api/analyze", {"source": "/definitely/not/here.mov"})
     check("analyse of a missing file 400s with a message", code == 400 and "no such file" in j.get("error", ""))
+    _txt = os.path.join(TMP, "notes-not-video.mov")
+    with open(_txt, "w") as f:
+        f.write("hello\n" * 100)
+    code, j = post("/api/analyze", {"source": _txt})
+    check("analyse of a file that is not a video says so in plain words",
+          code == 400 and "can't read" in j.get("error", "") and "ffprobe" not in j.get("error", ""), str(j))
 
+    # ---------------------------------------------------------- media prep
+    m = wait_media()
+    check("media prep finishes for the analysed clip",
+          m.get("state") == "ready" and m.get("pct") == 100
+          and m.get("source") == os.path.abspath(clips["moving box"]), str(m)[:300])
+    if m.get("state") == "ready":
+        proxy, strip = m["proxy"], m["strip"]
+        with open(proxy, "rb") as f:
+            head = f.read(12)
+        check("the proxy is an mp4", head[4:8] == b"ftyp", repr(head))
+        pinfo = json.loads(subprocess.run(
+            ["ffprobe", "-v", "error", "-show_streams", "-of", "json", proxy],
+            capture_output=True, text=True).stdout)["streams"]
+        vs = [s for s in pinfo if s["codec_type"] == "video"]
+        check("the proxy is h264 yuv420p, video only",
+              len(pinfo) == 1 and vs and vs[0]["codec_name"] == "h264" and vs[0]["pix_fmt"] == "yuv420p",
+              str([(s["codec_type"], s.get("codec_name"), s.get("pix_fmt")) for s in pinfo]))
+        check("the proxy keeps the source size under 1920 (even)",
+              vs and vs[0]["width"] == 640 and vs[0]["height"] == 400, str(vs[0] if vs else None))
+        check("the proxy is inside the media cache",
+              os.path.dirname(os.path.dirname(proxy)) == os.path.abspath(media.ROOT), proxy)
+        code, body, hdrs = get(fileurl(proxy), {"Range": "bytes=0-1023"})
+        check("the proxy is served with Range support as video/mp4",
+              code == 206 and len(body) == 1024 and hdrs.get("Content-Type") == "video/mp4"
+              and "Content-Range" in hdrs, f"{code} {hdrs.get('Content-Type')}")
+        want = min(90, max(8, round(dur)))
+        check("strip meta: frame count from the duration",
+              strip["count"] == want and strip["cols"] == 10
+              and strip["rows"] == math.ceil(want / 10), str(strip))
+        check("strip meta: 96px tiles at the source aspect",
+              strip["th"] == 96 and strip["tw"] == 154 and strip["tw"] % 2 == 0, str(strip))
+        check("strip meta: the tiles cover the clip",
+              abs(strip["interval"] * strip["count"] - dur) < 1e-6, str(strip))
+        code, body, hdrs = get(fileurl(strip["path"]))
+        check("the strip is a JPEG served as image/jpeg",
+              code == 200 and body[:3] == b"\xff\xd8\xff" and hdrs.get("Content-Type") == "image/jpeg")
+        sim = _Img.open(strip["path"])
+        check("the strip is exactly cols x rows tiles",
+              sim.size == (strip["cols"] * strip["tw"], strip["rows"] * strip["th"]),
+              f"{sim.size} vs {strip}")
+        again = media.Prep()
+        again.start(clips["moving box"])
+        check("a prepared source is ready instantly from the cache",
+              again.status()["state"] == "ready" and again.status()["proxy"] == proxy)
+
+    # ---------------------------------------------------------- stills + files
     code, j = post("/api/still", {"t": 1.0, "width": 480})
     check("POST /api/still renders a frame", code == 200 and os.path.isfile(j.get("path", "")))
     stillpath = j.get("path", "")
-    code, body, hdrs = get("/api/file?path=" + urllib.parse.quote(stillpath))
-    check("the still is served back", code == 200 and body[:4] == b"\x89PNG")
+    check("the still goes to the output folder under test",
+          os.path.dirname(stillpath) == os.path.abspath(srv.OUT_DIR), stillpath)
+    code, body, hdrs = get(fileurl(stillpath))
+    check("the still is served back as image/png",
+          code == 200 and body[:4] == b"\x89PNG" and hdrs.get("Content-Type") == "image/png")
 
     code, body, _ = get("/api/file?path=/etc/passwd")
     check("arbitrary files are NOT served", code == 404)
     code, body, _ = get("/api/file?path=" + urllib.parse.quote(os.path.expanduser("~/.ssh/id_rsa")))
     check("private files are NOT served", code == 404)
 
-    # edit a shot, confirm the camera keys follow
+    # ---------------------------------------------------------- editing
     proj = post("/api/project", {})[1]["project"]
     shots = proj["camera"]["shots"]
     shots[-1]["zoom"] = 1.4
@@ -404,34 +747,351 @@ try:
     code, j = post("/api/project", {"shots": shots})
     check("editing a shot rewrites the camera keys",
           code == 200 and any(abs(k[1] - 1.4) < 1e-6 for k in j["project"]["camera"]["keys"]))
+    good_shots = j["project"]["camera"]["shots"]
 
+    code, j = post("/api/project", {"shots": [{"start": 0.5, "end": 1.5, "zoom": 2}]})
+    check("a shot without a reason is accepted as manual",
+          code == 200 and j["project"]["camera"]["shots"][0]["reason"] == "manual", f"{code} {j}")
+    code, j = post("/api/project", {"shots": [
+        {"start": 2.0, "end": 3.0, "zoom": 20, "cx": -3, "cy": 7, "reason": "x", "id": "k1"},
+        {"start": 0.0, "end": 2.0, "zoom": 0.2, "cx": 0.5, "cy": 0.5}]})
+    sh2 = (j.get("project") or {}).get("camera", {}).get("shots", [])
+    check("edited shots are sorted and clamped",
+          code == 200 and [s["start"] for s in sh2] == [0.0, 2.0]
+          and sh2[0]["zoom"] == 1.0 and sh2[1]["zoom"] == 8.0
+          and (sh2[1]["cx"], sh2[1]["cy"]) == (0.0, 1.0), str(sh2))
+    check("the editor's own shot keys survive", sh2 and sh2[1].get("id") == "k1", str(sh2))
+    before = post("/api/project", {})[1]["project"]
+    rejected = {}
+    for label, body_ in (("start >= end", {"shots": [{"start": 2, "end": 2}]}),
+                         ("non-numeric zoom", {"shots": [{"start": 0, "end": 1, "zoom": "big"}]}),
+                         ("shots not a list", {"shots": {"start": 0}}),
+                         ("NaN start", {"shots": [{"start": float("nan"), "end": 1}]}),
+                         ("bad spring", {"spring": {"mass": "heavy"}}),
+                         ("bad preset", {"output": {"preset": "ludicrous"}}),
+                         ("output not an object", {"output": 5}),
+                         ("trim backwards", {"trim": [2.0, 1.0]}),
+                         ("trim before zero", {"trim": [-1.0, None]}),
+                         ("trim past the end", {"trim": [0.0, dur + 5]}),
+                         ("trim not a pair", {"trim": "all"}),
+                         ("missing background image",
+                          {"style": {"background": {"type": "image", "path": "/no/such.png"}}}),
+                         ("background image that is not an image",
+                          {"style": {"background": {"type": "image", "path": clips["static"]}}}),
+                         ("style not an object", {"style": 3}),
+                         ("a number too large for a float", {"trim": [10 ** 400, None]}),
+                         ("a valid shot beside an invalid trim",
+                          {"shots": [{"start": 0, "end": 1}], "trim": [5, 1]})):
+        rejected[label] = post("/api/project", body_)[0]
+    check("every bad edit is a 400, not a 500",
+          all(c == 400 for c in rejected.values()), str({k: v for k, v in rejected.items() if v != 400}))
+    check("a rejected edit leaves the project untouched",
+          post("/api/project", {})[1]["project"] == before)
+    code, j = post("/api/still", {"t": "soon"})
+    check("a still at a non-numeric time is a 400", code == 400, f"{code} {j}")
+
+    code, j = post("/api/project", {"shots": []})
+    check("deleting every shot holds the camera wide",
+          code == 200 and j["project"]["camera"]["keys"] == [], str(j)[:200])
+    code, j = post("/api/project", {"spring": {"mass": 0, "stiffness": 99999, "damping": 40}})
+    check("the spring is clamped and stored on the camera",
+          code == 200 and j["project"]["camera"]["spring"] == {"mass": 0.1, "stiffness": 2000.0,
+                                                                "damping": 40.0},
+          str(j.get("project", {}).get("camera", {}).get("spring")))
+    code, j = post("/api/project", {"output": {"width": 1001, "height": 10, "fps": 500,
+                                               "crf": -3, "preset": "veryfast", "bogus": 1}})
+    o = j.get("project", {}).get("output", {})
+    check("output is sanitised (even, clamped, unknown keys dropped)",
+          code == 200 and (o.get("width"), o.get("height"), o.get("fps"), o.get("crf"),
+                           o.get("preset")) == (1000, 64, 120, 0, "veryfast") and "bogus" not in o,
+          str(o))
+    code, j = post("/api/project", {"output": {"width": 99999, "height": 1080.9}})
+    o = j.get("project", {}).get("output", {})
+    check("output sizes are capped at 7680 and rounded down to even",
+          (o.get("width"), o.get("height")) == (7680, 1080), str(o))
+    code, j = post("/api/project", {"trim": [1.0, dur]})
+    check("a trim to the very end is stored as null",
+          code == 200 and j["project"]["trim"] == [1.0, None], str(j.get("project", {}).get("trim")))
+    code, j = post("/api/project", {"trim": [0.5, 2.5]})
+    check("a trim inside the clip is stored as given",
+          code == 200 and j["project"]["trim"] == [0.5, 2.5])
+    bgpng = os.path.join(TMP, "my background.png")
+    shutil.copy(stillpath, bgpng)
+    code, j = post("/api/project", {"style": {"background": {"type": "image", "path": bgpng}}})
+    check("an image background is accepted",
+          code == 200 and j["project"]["style"]["background"]["path"] == os.path.abspath(bgpng),
+          f"{code} {j.get('error')}")
+    code, body, _ = get(fileurl(bgpng))
+    check("...and served, so the preview can show it", code == 200 and body[:4] == b"\x89PNG")
+    code, _, _ = get("/api/wallpaper-thumb?name=" + urllib.parse.quote(bgpng) + "&w=320&h=200")
+    check("the thumbnail endpoint serves wallpapers only, never a path on disk", code == 404, str(code))
+    # back to a quick, fully-specified state for the renders below
+    code, j = post("/api/project", {"shots": good_shots, "trim": [0.0, None],
+                                    "output": {"width": 1920, "height": 1080, "fps": 30,
+                                               "crf": 20, "preset": "veryfast"},
+                                    "style": {"background": before["style"]["background"]}})
+    check("edits can be combined in one request", code == 200 and
+          len(j["project"]["camera"]["shots"]) == nshots, f"{code} {j.get('error')}")
+
+    # ---------------------------------------------------------- render
+    code, j = post("/api/render/cancel", {})
+    check("cancel with nothing running is a 409", code == 409, str(code))
     code, j = post("/api/render", {"preview": True})
     check("POST /api/render starts a render", code == 200 and j.get("output"))
-    outp = j.get("output")
-    deadline = time.time() + 300
-    prog = {}
-    while time.time() < deadline:
-        prog = json.loads(get("/api/progress")[1])
-        if prog.get("state") in ("done", "error"):
-            break
-        time.sleep(0.5)
+    code2, j2 = post("/api/render", {"preview": True})
+    check("a second render while one runs is a 409", code2 == 409, str(code2))
+    prog = wait_render()
     check("the render finishes", prog.get("state") == "done", str(prog)[:200])
+    check("progress carries started / preview / elapsed",
+          isinstance(prog.get("started"), float) and prog.get("preview") is True
+          and prog.get("elapsed", -1) >= 0 and "ended" not in prog, str(prog))
     if prog.get("state") == "done":
         check("the rendered file exists", os.path.isfile(prog["output"]))
-        code, body, hdrs = get("/api/file?path=" + urllib.parse.quote(prog["output"]),
-                               {"Range": "bytes=0-1023"})
+        check("the preview lands in the output folder under test",
+              os.path.dirname(prog["output"]) == os.path.abspath(srv.OUT_DIR), prog["output"])
+        code, body, hdrs = get(fileurl(prog["output"]), {"Range": "bytes=0-1023"})
         check("video is served with Range support (so it can seek)",
               code == 206 and len(body) == 1024 and "Content-Range" in hdrs)
+        code, body, hdrs = get(fileurl(prog["output"]), {"Range": "bytes=-100"})
+        size = os.path.getsize(prog["output"])
+        check("a suffix Range returns the last bytes",
+              code == 206 and len(body) == 100
+              and hdrs.get("Content-Range") == f"bytes {size - 100}-{size - 1}/{size}", str(hdrs))
+        time.sleep(0.05)
+        check("elapsed stops counting once the render is done",
+              json.loads(get("/api/progress")[1])["elapsed"] == prog["elapsed"])
 
+    code, j = post("/api/render", {"preview": True, "name": "../../My Export.mov"})
+    named = os.path.join(os.path.abspath(srv.OUT_DIR), "My Export.mp4")
+    check("a render name is a bare .mp4 in the output folder",
+          code == 200 and j.get("output") == named, str(j))
+    prog = wait_render()
+    check("the named render finishes", prog.get("state") == "done" and os.path.isfile(named),
+          str(prog)[:200])
+    code, j = post("/api/render", {"output": clips["moving box"]})
+    check("an export that would overwrite the recording is refused",
+          code == 400 and os.path.getsize(clips["moving box"]) > 0, f"{code} {j}")
+    _src = clips["moving box"]
+    _swapped = os.path.join(os.path.dirname(_src), os.path.basename(_src).upper())
+    if os.path.exists(_swapped):                  # case-insensitive: macOS, Windows
+        code, j = post("/api/render", {"output": _swapped})
+        check("...in any spelling of its name", code == 400 and os.path.getsize(_src) > 0, f"{code} {j}")
+    else:
+        skip("an export in another case is the recording", "this filesystem is case-sensitive")
+    _link = os.path.join(TMP, "link-to-recording.mp4")
+    try:
+        os.symlink(_src, _link)
+    except (OSError, NotImplementedError, AttributeError):
+        skip("an export through a link to the recording is refused", "cannot make links here")
+    else:
+        code, j = post("/api/render", {"output": _link})
+        check("...or through a link to it", code == 400 and os.path.getsize(_src) > 0, f"{code} {j}")
+
+    cancel_out = os.path.join(os.path.abspath(srv.OUT_DIR), "cancel-me.mp4")
+    code, j = post("/api/render", {"name": "cancel-me"})
+    code_c, jc = post("/api/render/cancel", {})
+    check("a running render can be cancelled", code == 200 and code_c == 200, f"{code} {code_c} {jc}")
+    prog = wait_render()
+    check("a cancelled render reports cancelled", prog.get("state") == "cancelled", str(prog)[:200])
+    check("a cancelled render leaves no partial file", not os.path.exists(cancel_out))
+
+    # ---------------------------------------------------------- save / load
+    code, j = post("/api/save", {})
+    check("save defaults to <recording>.zoomcut.json in the output folder",
+          code == 200 and j.get("path") == os.path.join(os.path.abspath(srv.OUT_DIR),
+                                                        "moving.zoomcut.json"), str(j))
     code, j = post("/api/save", {"path": os.path.join(TMP, "ui.json")})
     check("POST /api/save writes a project", code == 200 and os.path.isfile(j["path"]))
+    srv.S.media.stop()
+    srv.S.analysis = None
     code, j = post("/api/load", {"path": os.path.join(TMP, "ui.json")})
     check("POST /api/load reads it back", code == 200 and len(j["project"]["camera"]["shots"]) == nshots)
+    ms = srv.S.media.status()
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        code_s, js = post("/api/suggest", {"t0": 0.5, "t1": 3.0})
+        if code_s != 409:
+            break
+        time.sleep(0.25)
+    check("after a load, new zooms are framed once the analysis warms up", code_s == 200,
+          f"{code_s} {js}")
+    check("loading a project starts media prep",
+          ms["state"] in ("working", "ready") and ms["source"] == os.path.abspath(clips["moving box"]),
+          str(ms)[:200])
+    with open(os.path.join(TMP, "junk.json"), "w") as f:
+        f.write("[1, 2")
+    code, j = post("/api/load", {"path": os.path.join(TMP, "junk.json")})
+    check("loading a broken project is a 400", code == 400, f"{code} {j}")
+    code, j = post("/api/load", {"path": os.path.join(TMP, "nope.zoomcut.json")})
+    check("loading a missing project is a 400", code == 400, f"{code} {j}")
+    ui_json = os.path.join(TMP, "ui.json")
+    with open(ui_json) as f:
+        _pj = json.load(f)
+    _pj["source"] = os.path.join(TMP, "no-longer-here.mov")
+    with open(os.path.join(TMP, "gone.zoomcut.json"), "w") as f:
+        json.dump(_pj, f)
+    code, j = post("/api/load", {"path": os.path.join(TMP, "gone.zoomcut.json")})
+    m = json.loads(get("/api/media")[1])
+    check("a project whose recording is gone says so, instead of showing another clip",
+          code == 200 and m["state"] == "error" and m["source"] == _pj["source"] and m["proxy"] is None,
+          str(m)[:200])
+    _twin = os.path.join(TMP, "elsewhere", os.path.basename(clips["moving box"]))
+    os.makedirs(os.path.dirname(_twin), exist_ok=True)
+    shutil.copy(clips["moving box"], _twin)
+    post("/api/analyze", {"source": _twin, "size": "1080p", "fps": 30})
+    code, j = post("/api/save", {})
+    code2, j2 = post("/api/save", {})
+    check("a recording that shares a name never overwrites the other one's project",
+          code == 200 and j.get("path", "").endswith("moving (2).zoomcut.json")
+          and j2.get("path") == j.get("path"), f"{j} {j2}")
+    srv.S.analysis = None
+    for _ in range(5):
+        post("/api/load", {"path": ui_json})
+    _warmers = [t for t in threading.enumerate() if t.name == "zoomcut-analysis" and t.is_alive()]
+    check("loads in quick succession run one background analysis, not one each",
+          len(_warmers) <= 1, str(len(_warmers)))
+
+    # ---------------------------------------------------------- upload
+    with open(DEMO_CLIP, "rb") as f:
+        demo = f.read()
+    code, j = upload("demo-recording.mp4", demo)
+    imports = os.path.join(os.path.abspath(srv.OUT_DIR), "imports")
+    up1 = j.get("path", "")
+    check("a video upload lands in imports/",
+          code == 200 and j.get("kind") == "video" and os.path.dirname(up1) == imports
+          and j.get("size") == len(demo), str(j))
+    if os.path.isfile(up1):
+        with open(up1, "rb") as f:
+            check("the upload is byte-identical", f.read() == demo)
+    code, j = upload("demo-recording.mp4", demo)
+    check("dropping the same file again reuses the first copy",
+          code == 200 and j.get("path") == up1 and j.get("existing") is True
+          and sorted(n for n in os.listdir(imports) if n.startswith("demo-recording")) == ["demo-recording.mp4"],
+          f"{j} {os.listdir(imports)}")
+    with open(clips["moving box"], "rb") as f:
+        code, j = upload("demo-recording.mp4", f.read())
+    check("a different file under the same name never overwrites",
+          code == 200 and os.path.basename(j.get("path", "")) == "demo-recording (2).mp4", str(j))
+    code, body, _ = get(fileurl(j.get("path", "")), {"Range": "bytes=0-9"})
+    check("an upload can be played back straight away", code == 206 and len(body) == 10)
+    code, j = upload("not really.mp4", b"this is a text file with a video name\n" * 40)
+    check("an upload that is not a readable video is refused in plain words",
+          code == 415 and "can't read" in j.get("error", "") and "ffprobe" not in j.get("error", ""),
+          str(j))
+    check("...and leaves nothing in imports",
+          not [n for n in os.listdir(imports) if n.startswith("not really")], str(os.listdir(imports)))
+    with open(bgpng, "rb") as f:
+        code, j = upload("../../etc/Back ground!.PNG", f.read())
+    check("an image upload lands in backgrounds/ under a clean name",
+          code == 200 and j.get("kind") == "image"
+          and j.get("path") == os.path.join(os.path.abspath(srv.OUT_DIR), "backgrounds",
+                                            "Back ground.PNG"), str(j))
+    code, j = upload("notes.txt", b"hello")
+    check("an upload that is neither video nor image is a 415", code == 415, str(code))
+    code, j = upload("README", b"hello")
+    check("an upload with no extension is a 415", code == 415, str(code))
+    code, body, _ = raw("POST", "/api/upload?name=a.mp4", headers={"X-Zoomcut-Upload": "1"})
+    check("an upload without a Content-Length is a 411", code == 411, str(code))
+    code, body, _ = raw("POST", "/api/upload?name=a.mp4", headers={
+        "X-Zoomcut-Upload": "1", "Content-Length": str((64 << 30) + 1)})
+    check("an upload over 64 GiB is a 413", code == 413, str(code))
+    code, body, _ = raw("POST", "/api/upload?name=a.mp4", headers={
+        "X-Zoomcut-Upload": "1", "Content-Length": "\u00b2"})
+    check("a Content-Length that is not ASCII digits is a 411, not a 500", code == 411, f"{code} {body[:80]}")
+
+    def _short(sock):
+        sock.sendall(b"only ten b")
+        sock.shutdown(socket.SHUT_WR)
+    code, body, _ = raw("POST", "/api/upload?name=short.mp4", headers={
+        "X-Zoomcut-Upload": "1", "Content-Length": "100000"}, send=_short)
+    check("a truncated upload is a 400", code == 400, f"{code} {body[:80]}")
+    check("...and leaves nothing behind",
+          not [n for n in os.listdir(imports) if n.startswith("short") or n.endswith(".part")],
+          str(os.listdir(imports)))
+
+    # ---------------------------------------------------------- recents
+    outd = os.path.abspath(srv.OUT_DIR)
+    shutil.copy(clips["corner action"], os.path.join(outd, "capture-test.mov"))
+    for junk in (".hidden.mp4", "half.mp4.part", "capture-test.mov.pad.mov", "notes.txt"):
+        with open(os.path.join(outd, junk), "wb") as f:
+            f.write(b"x")
+    code, body, _ = get("/api/recent")
+    rec = json.loads(body) if code == 200 else {}
+    items = rec.get("items", [])
+    by_name = {i["name"]: i for i in items}
+    check("GET /api/recent answers with the output folder",
+          code == 200 and rec.get("outDir") == srv.OUT_DIR, str(rec)[:200])
+    check("recents: dot-files, .part, .pad.mov and non-media are skipped",
+          not {".hidden.mp4", "half.mp4.part", "capture-test.mov.pad.mov", "notes.txt"} & set(by_name),
+          str(sorted(by_name)))
+    kinds = {n: i["kind"] for n, i in by_name.items()}
+    check("recents: recordings, exports, imports and projects are told apart",
+          kinds.get("capture-test.mov") == "recording" and kinds.get("moving-preview.mp4") == "export"
+          and kinds.get("demo-recording.mp4") == "import" and kinds.get("moving.zoomcut.json") == "project",
+          str(kinds))
+    check("recents: an export under a name of its own is still an export",
+          kinds.get("My Export.mp4") == "export", str(kinds.get("My Export.mp4")))
+    check("recents: newest first",
+          all(a["mtime"] >= b["mtime"] for a, b in zip(items, items[1:])))
+    ct = by_name.get("capture-test.mov", {})
+    check("recents: a recording is probed for its size and length",
+          ct.get("width") == 640 and ct.get("height") == 400 and abs((ct.get("duration") or 0) - 4.0) < 0.2,
+          str(ct))
+    pjs = by_name.get("moving.zoomcut.json", {})
+    check("recents: a project names its recording",
+          pjs.get("source") == os.path.abspath(clips["moving box"]) and pjs.get("width") == 640, str(pjs))
+    code, body, _ = get(fileurl(os.path.join(outd, "capture-test.mov")), {"Range": "bytes=0-9"})
+    check("recents: every listed file can then be served", code == 206)
+    srv.PROBE_BUDGET, _budget = -1.0, srv.PROBE_BUDGET
+    shutil.copy(clips["static"], os.path.join(outd, "capture-late.mov"))
+    late = {i["name"]: i for i in json.loads(get("/api/recent")[1])["items"]}
+    srv.PROBE_BUDGET = _budget
+    check("recents: past the probing budget sizes are left null, memoised ones kept",
+          late["capture-late.mov"]["duration"] is None
+          and late["capture-test.mov"]["duration"] is not None, str(late.get("capture-late.mov")))
+    srv.OUT_DIR, _out = os.path.join(TMP, "never-created"), srv.OUT_DIR
+    code, body, _ = get("/api/recent")
+    srv.OUT_DIR = _out
+    check("recents: a missing output folder is an empty list",
+          code == 200 and json.loads(body)["items"] == [], str(body[:100]))
+
+    # ---------------------------------------------------------- posters
+    cap = os.path.join(outd, "capture-test.mov")
+    code, body, hdrs = get("/api/poster?path=" + urllib.parse.quote(cap))
+    ok_poster = code == 200 and body[:3] == b"\xff\xd8\xff"
+    check("a poster is a JPEG with an hour's caching",
+          ok_poster and hdrs.get("Content-Type") == "image/jpeg"
+          and hdrs.get("Cache-Control") == "max-age=3600", f"{code} {hdrs}")
+    if ok_poster:
+        import io as _io
+        check("a poster is 320 px wide", _Img.open(_io.BytesIO(body)).size[0] == 320)
+    check("posters are cached under the posters folder",
+          len([n for n in os.listdir(media.POSTERS) if n.endswith(".jpg")]) == 1)
+    code, _, _ = get("/api/poster?path=/etc/passwd")
+    check("a poster of an unlisted file is a 404", code == 404)
+    code, _, _ = get("/api/poster?path=" + urllib.parse.quote(os.path.join(TMP, "never.mp4")))
+    check("a poster of a missing file is a 404", code == 404)
+
+    # ---------------------------------------------------------- misc
+    code, j = post("/api/reveal", {"path": "/definitely/not/here.mp4"})
+    check("revealing an unknown path is a 404", code == 404)
+    if QUICK or not wp_body.get("wallpapers"):
+        skip("large wallpaper thumbnails", "--quick" if QUICK else "no wallpapers")
+    else:
+        code, body, _ = get("/api/wallpaper-thumb?name=%s&w=1600&h=900"
+                            % urllib.parse.quote(wp_body["default"] or wp_body["wallpapers"][0]))
+        import io as _io
+        check("a wallpaper thumbnail can be asked for at preview size",
+              code == 200 and _Img.open(_io.BytesIO(body)).size == (1600, 904), str(code))
 finally:
+    _live = srv.S.media.proc
+    srv.S.media.stop()
+    srv.shutdown_session()
     httpd.shutdown()
     httpd.server_close()
     th.join(timeout=5)
 check("the test server is shut down", not th.is_alive())
+check("no media ffmpeg is left running", _live is None or _live.poll() is not None)
 
 # ==========================================================================
 section("9 · the real thing: record a window, auto-cut it, render it")
@@ -454,8 +1114,10 @@ if ok:
         path = recorder.stop(rec)
         info = probe(path)
         check("window recording produced a file", os.path.getsize(path) > 0)
-        check("captured at the window's size (2x retina)",
-              abs(info["width"] - tgt["width"] * 2) <= 4 and abs(info["height"] - tgt["height"] * 2) <= 4,
+        # 2x on a retina panel, 1x on an ordinary external display
+        check("captured at the window's size (at the display's scale)",
+              any(abs(info["width"] - tgt["width"] * k) <= 4
+                  and abs(info["height"] - tgt["height"] * k) <= 4 for k in (1, 2)),
               f"{info['width']}x{info['height']} vs window {tgt['width']}x{tgt['height']}")
         check("recording padded to real elapsed time (no silent truncation)",
               info["duration"] > 2.5, f"{info['duration']:.2f}s for a 3.0s recording")
@@ -545,6 +1207,190 @@ for bad in ("nope", "", "Window"):
         check(f"mode {bad!r} is rejected", False)
     except ZoomcutError:
         check(f"mode {bad!r} is rejected", True)
+
+# ==========================================================================
+section("11 · editor media + request helpers")
+lay = media.strip_layout(12.0, 1600, 1000)
+check("strip layout: one tile a second, 10 across",
+      (lay["count"], lay["cols"], lay["rows"], lay["tw"], lay["th"]) == (12, 10, 2, 154, 96)
+      and lay["interval"] == 1.0, str(lay))
+check("strip layout: at least 8 tiles, at least 64px wide",
+      (lambda l: (l["count"], l["rows"], l["tw"]) == (8, 1, 64))(media.strip_layout(0.6, 400, 900)))
+check("strip layout: at most 90 tiles, at most 256px wide",
+      (lambda l: (l["count"], l["rows"], l["tw"]) == (90, 9, 256))(media.strip_layout(3600, 3840, 1080)))
+
+_kf = os.path.join(TMP, "key.bin")
+with open(_kf, "wb") as f:
+    f.write(b"one")
+_k1 = media.source_key(_kf)
+check("a media key is 16 hex and stable",
+      len(_k1) == 16 and all(c in "0123456789abcdef" for c in _k1) and media.source_key(_kf) == _k1)
+with open(_kf, "wb") as f:
+    f.write(b"two!")
+check("a media key changes when the file does", media.source_key(_kf) != _k1)
+
+_pr = os.path.join(TMP, "prune")
+for i in range(15):
+    d = os.path.join(_pr, f"e{i:02d}")
+    os.makedirs(d)
+    with open(os.path.join(d, "blob"), "wb") as f:
+        f.write(b"x" * 1000)
+    os.utime(d, (1_000_000 + i * 10, 1_000_000 + i * 10))
+media.prune(_pr, keep=os.path.join(_pr, "e00"))
+left = sorted(os.listdir(_pr))
+check("media cache keeps the newest 12 entries (and the one in use)",
+      left == ["e00"] + [f"e{i:02d}" for i in range(4, 15)], str(left))
+media.prune(_pr, budget=3500)
+check("media cache also fits a byte budget, oldest going first",
+      sorted(os.listdir(_pr)) == ["e12", "e13", "e14"], str(sorted(os.listdir(_pr))))
+_pf = os.path.join(TMP, "prune-files")
+os.makedirs(_pf)
+for i in range(5):
+    with open(os.path.join(_pf, f"p{i}.jpg"), "wb") as f:
+        f.write(b"x")
+    os.utime(os.path.join(_pf, f"p{i}.jpg"), (2_000_000 + i, 2_000_000 + i))
+media.prune_files(_pf, 3)
+check("poster cache keeps the newest files", sorted(os.listdir(_pf)) == ["p2.jpg", "p3.jpg", "p4.jpg"])
+
+media.ROOT = os.path.join(TMP, "media-2")
+_prep = media.Prep()
+_prep.start(clips["moving box"])
+_prep.start(clips["corner action"])        # supersedes the first straight away
+
+
+def _settle(p, timeout=120):
+    deadline = time.time() + timeout
+    while time.time() < deadline and p.status()["state"] == "working":
+        time.sleep(0.1)
+    return p.status()
+
+
+_ms = _settle(_prep)
+check("a newer media job supersedes the older one",
+      _ms["state"] == "ready" and _ms["source"] == os.path.abspath(clips["corner action"]), str(_ms)[:200])
+_parts = [os.path.join(b, n) for b, _, fs in os.walk(media.ROOT) for n in fs if n.endswith(".part")]
+check("a superseded job leaves no temp files", not _parts, str(_parts))
+check("a finished job holds no process", _prep.proc is None)
+_bogus = os.path.join(TMP, "not-a-video.mp4")
+with open(_bogus, "w") as f:
+    f.write("definitely not a video\n" * 50)
+_prep.start(_bogus)
+_ms = _settle(_prep)
+check("media prep of a broken file reports a short error",
+      _ms["state"] == "error" and _ms["message"] and "\n" not in _ms["message"]
+      and len(_ms["message"]) <= 200, str(_ms))
+_prep.stop()
+check("stopping media prep returns it to idle", _prep.status()["state"] == "idle")
+_long = mkclip(os.path.join(TMP, "long-for-media.mp4"), "testsrc2=s=1280x720", dur=30, size="1280x720")
+_prep.start(_long)
+_deadline = time.time() + 30
+while time.time() < _deadline and _prep.proc is None and _prep.status()["state"] == "working":
+    time.sleep(0.01)
+_p = _prep.proc
+_prep.stop()
+check("stopping media prep mid-job kills its ffmpeg",
+      _p is not None and _p.poll() is not None,
+      "never saw the job running" if _p is None else f"poll={_p.poll()}")
+
+check("names: folders are dropped", srv._safe_name("../../etc/passwd") == "passwd")
+check("names: either slash is a folder", srv._safe_name("a/b\\c.mov") == "c.mov")
+check("names: no dot-files", srv._safe_name(".hidden.mov") == "hidden.mov")
+check("names: shell characters are dropped",
+      srv._safe_name("rm -rf $(x);.mov") == "rm -rf (x).mov", srv._safe_name("rm -rf $(x);.mov"))
+check("names: Windows device names are defused", srv._safe_name("CON.mp4") == "_CON.mp4")
+_dev = [srv._safe_name(n) for n in ("NUL.x.mov", "nul .x.mov", "COM0.mp4", "LPT\u00b9.png", "console.log.mov")]
+check("names: a device name before the first dot is defused too",
+      _dev == ["_NUL.x.mov", "_nul .x.mov", "_COM0.mp4", "_LPT\u00b9.png", "console.log.mov"], str(_dev))
+_pf2 = os.path.join(TMP, "prune-keep")
+os.makedirs(_pf2)
+for i in range(4):
+    with open(os.path.join(_pf2, f"t{i}.jpg"), "wb") as f:
+        f.write(b"x")
+    os.utime(os.path.join(_pf2, f"t{i}.jpg"), (3_000_000 + i, 3_000_000 + i))
+media.prune_files(_pf2, 2, keep_path=os.path.join(_pf2, "t0.jpg"))
+check("pruning spares the file about to be served", sorted(os.listdir(_pf2)) == ["t0.jpg", "t2.jpg", "t3.jpg"],
+      str(sorted(os.listdir(_pf2))))
+_ln = srv._safe_name("x" * 300 + ".mp4")
+check("names: at most 120 characters, extension kept", len(_ln) == 120 and _ln.endswith(".mp4"))
+check("names: letters beyond ASCII survive", srv._safe_name("عرض.mov") == "عرض.mov")
+check("export names are forced to .mp4",
+      [srv._mp4_name(n) for n in ("demo.mov", "v1.2", "clip.MP4")] == ["demo.mp4", "v1.2.mp4", "clip.mp4"])
+try:
+    srv._mp4_name("../")
+    check("an empty export name is refused", False)
+except ZoomcutError:
+    check("an empty export name is refused", True)
+check("thumbnail sizes snap to 8 inside [32, 1920]",
+      [srv._thumb_dim(v, 7) for v in ("5", "99999", "1000", "1003", "1005", None, "abc", "nan")]
+      == [32, 1920, 1000, 1000, 1008, 7, 7, 7])
+check("host names are compared without their port",
+      [srv._hostname(h) for h in ("127.0.0.1:8765", "[::1]:8765", "::1", "LocalHost", "evil.example:80")]
+      == ["127.0.0.1", "::1", "::1", "localhost", "evil.example"])
+
+# ==========================================================================
+section("12 · the editor's camera is the renderer's camera")
+# The browser preview runs its own copy of the keyframing and the spring
+# (zoomcut/web/camera.js), so what plays in the editor is what exports. This
+# holds the two together: change one without the other and it fails here.
+_node = shutil.which("node")
+if not _node:
+    skip("the editor's camera matches the renderer", "node is not installed")
+else:
+    _web = os.path.join(ROOT, "zoomcut", "web")
+    _dir = os.path.join(TMP, "camera-js")
+    os.makedirs(_dir, exist_ok=True)
+    # .mjs, so any Node from 14 up treats it as a module without a package.json
+    shutil.copy(os.path.join(_web, "camera.js"), os.path.join(_dir, "camera.mjs"))
+    with open(os.path.join(_dir, "check.mjs"), "w") as f:
+        f.write("""import fs from 'fs';
+import { keyframes, simulate, cameraAt, shotsFromSegs, segsFromShots } from './camera.mjs';
+const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const sim = simulate(d.keys, d.spring, d.fps, d.t0, d.t1);
+console.log(JSON.stringify({
+  keys: keyframes(d.shots),
+  states: d.times.map(t => cameraAt(sim, t)),
+  roundtrip: keyframes(shotsFromSegs(segsFromShots(d.shots), d.dur)),
+}));
+""")
+    _an = analyze(clips["moving box"])
+    _shots = plan(_an)
+    _keys = keyframes(_shots)
+    _spring = {"mass": 1.7, "stiffness": 260.0, "damping": 31.0}
+    _fps, _t0, _t1 = 30, 0.4, _an.duration
+
+    def _py_states(keys):
+        """render()'s camera loop: frame n is the state after n+1 steps."""
+        k, m, c = _spring["stiffness"], _spring["mass"], _spring["damping"]
+        z0, x0, y0 = target_at(keys, _t0)
+        sz, sx, sy = Spring(math.log(z0), k, m, c), Spring(x0, k, m, c), Spring(y0, k, m, c)
+        out = []
+        for n in range(int((_t1 - _t0) * _fps)):
+            tz, tx, ty = target_at(keys, _t0 + n / _fps)
+            out.append((math.exp(sz.step(math.log(tz), 1 / _fps)),
+                        sx.step(tx, 1 / _fps), sy.step(ty, 1 / _fps)))
+        return out
+
+    _want = _py_states(_keys)
+    _in = os.path.join(_dir, "in.json")
+    with open(_in, "w") as f:
+        json.dump({"shots": [s.to_dict() for s in _shots], "keys": _keys, "spring": _spring,
+                   "fps": _fps, "t0": _t0, "t1": _t1, "dur": _an.duration,
+                   "times": [_t0 + n / _fps for n in range(len(_want))]}, f)
+    _p = subprocess.run([_node, os.path.join(_dir, "check.mjs"), _in], capture_output=True, text=True)
+    if _p.returncode != 0:
+        check("the editor's camera module runs under node", False, _p.stderr[-400:])
+    else:
+        _got = json.loads(_p.stdout)
+        _kd = max((abs(a - b) for ka, kb in zip(_got["keys"], _keys) for a, b in zip(ka, kb)), default=0)
+        check("the editor keyframes shots exactly like the director",
+              len(_got["keys"]) == len(_keys) and _kd < 1e-9, f"{len(_got['keys'])} vs {len(_keys)}, max diff {_kd}")
+        _sd = max(abs(a - b) for sa, sb in zip(_got["states"], _want) for a, b in zip(sa, sb))
+        check("the editor's spring follows the renderer's frame by frame (custom spring, trim, 30 fps)",
+              len(_got["states"]) == len(_want) and _sd < 1e-9, f"max diff {_sd:.2e} over {len(_want)} frames")
+        _rt = _py_states(_got["roundtrip"])
+        _rd = max(abs(a - b) for sa, sb in zip(_rt, _want) for a, b in zip(sa, sb))
+        check("editing zooms only (wide shots filled back in) leaves the camera unchanged",
+              _rd < 1e-9, f"max diff {_rd:.2e}")
 
 tail = f", {len(SKIP)} skipped" if SKIP else ""
 print(f"\n\033[1m{len(PASS)} passed, {len(FAIL)} failed{tail}\033[0m")
