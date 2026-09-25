@@ -79,7 +79,9 @@ def comparison(out=os.path.join(DOCS, "example.png")):
     sf = font(23, "Regular")
     d.text((PAD, 30), "the raw recording", font=lf, fill=DIM)
     d.text((PAD + PW + GAP, 30), "what Zoomcut exports", font=lf, fill=INK)
-    d.text((PAD + int(d.textlength("what Zoomcut exports", font=lf)) + 18, 36),
+    # the caption follows the right-hand heading, not the left one
+    right = PAD + PW + GAP
+    d.text((right + int(d.textlength("what Zoomcut exports", font=lf)) + 18, 36),
            "— same frame, framed", font=sf, fill=(108, 112, 138))
     img.save(out)
     os.remove(zoomed)

@@ -362,7 +362,7 @@ python3 tests/test_all.py --quick     # skips wallpapers, window list, live reco
 python3 tools/sim_platform.py linux   # run the suite as if this were Linux
 ```
 
-**308 checks.** `sim_platform.py` flips the platform flags so the Windows and Linux
+**314 checks.** `sim_platform.py` flips the platform flags so the Windows and Linux
 branches of our own logic can be exercised from any machine — it is how the "this machine has no
 wallpapers installed" assumption was caught before it reached a server image. CI then runs the
 suite for real on **macOS, Windows and Linux**, and on Linux and Windows it goes

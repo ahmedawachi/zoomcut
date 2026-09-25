@@ -223,7 +223,8 @@ def cmd_still(a):
 
 def cmd_ui(a):
     from .server import serve
-    serve(host=a.host, port=a.port, open_browser=not a.no_open)
+    serve(host=a.host, port=a.port, open_browser=not a.no_open,
+          exit_with_stdin=a.exit_with_stdin)
     return 0
 
 
@@ -315,6 +316,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8765)
     s.add_argument("--no-open", action="store_true")
+    s.add_argument("--exit-with-stdin", action="store_true",
+                   help="stop when stdin closes (how the desktop app runs it)")
     s.set_defaults(func=cmd_ui)
     return p
 

@@ -1298,6 +1298,30 @@ check("names: no dot-files", srv._safe_name(".hidden.mov") == "hidden.mov")
 check("names: shell characters are dropped",
       srv._safe_name("rm -rf $(x);.mov") == "rm -rf (x).mov", srv._safe_name("rm -rf $(x);.mov"))
 check("names: Windows device names are defused", srv._safe_name("CON.mp4") == "_CON.mp4")
+import zoomcut.util as _u
+_calls = {"n": 0}
+
+
+def _locked_twice():
+    _calls["n"] += 1
+    if _calls["n"] <= 2:
+        raise PermissionError(32, "The process cannot access the file because it is being used")
+    return "done"
+
+
+_was_win = _u.IS_WIN
+try:
+    _u.IS_WIN = True
+    check("on Windows a file still held for a moment is waited out, not given up on",
+          _u.patient(_locked_twice) == "done" and _calls["n"] == 3, str(_calls))
+    _u.IS_WIN, _calls["n"] = False, 0
+    try:
+        _u.patient(_locked_twice)
+        check("elsewhere a locked file fails at once", False)
+    except PermissionError:
+        check("elsewhere a locked file fails at once", _calls["n"] == 1)
+finally:
+    _u.IS_WIN = _was_win
 _dev = [srv._safe_name(n) for n in ("NUL.x.mov", "nul .x.mov", "COM0.mp4", "LPT\u00b9.png", "console.log.mov")]
 check("names: a device name before the first dot is defused too",
       _dev == ["_NUL.x.mov", "_nul .x.mov", "_COM0.mp4", "_LPT\u00b9.png", "console.log.mov"], str(_dev))
@@ -1391,6 +1415,54 @@ console.log(JSON.stringify({
         _rd = max(abs(a - b) for sa, sb in zip(_rt, _want) for a, b in zip(sa, sb))
         check("editing zooms only (wide shots filled back in) leaves the camera unchanged",
               _rd < 1e-9, f"max diff {_rd:.2e}")
+
+# ==========================================================================
+section("13 · the server the desktop app runs")
+# The desktop shell starts `zoomcut ui --port 0 --no-open --exit-with-stdin`,
+# reads the address from the first line, and closes stdin to stop it - or
+# dies, which closes it too. Exercised here exactly that way.
+_env = {**os.environ, "ZOOMCUT_OUTPUT_DIR": os.path.join(TMP, "desktop-out"), "ZOOMCUT_DEMO": "1"}
+_proc = subprocess.Popen([sys.executable, "-m", "zoomcut", "ui", "--port", "0", "--no-open",
+                          "--exit-with-stdin"], cwd=ROOT, env=_env, stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+_url = None
+_deadline = time.time() + 60
+while time.time() < _deadline:
+    _line = _proc.stdout.readline()
+    if not _line:
+        break
+    if "zoomcut ui  ->" in _line:
+        _url = _line.split("->", 1)[1].strip()
+        break
+check("asked for port 0, the server reports the port it really got",
+      bool(_url) and not _url.endswith(":0/"), str(_url))
+if _url:
+    try:
+        with urllib.request.urlopen(_url + "api/state", timeout=30) as _r:
+            check("...and answers on it", _r.status == 200)
+    except OSError as _e:
+        check("...and answers on it", False, str(_e))
+_proc.stdin.close()
+try:
+    _rc = _proc.wait(timeout=30)
+except subprocess.TimeoutExpired:
+    _proc.kill()
+    _rc = None
+check("closing its stdin stops the server cleanly", _rc == 0, f"exit {_rc}")
+if _url:
+    # nothing may still be listening (a bind would trip over TIME_WAIT)
+    _port = int(_url.rstrip("/").rsplit(":", 1)[1])
+    _s = socket.socket()
+    _s.settimeout(3)
+    try:
+        _s.connect(("127.0.0.1", _port))
+        _free = False
+    except OSError:
+        _free = True
+    finally:
+        _s.close()
+    check("...and nothing is left listening on its port", _free)
+_proc.stdout.close()
 
 tail = f", {len(SKIP)} skipped" if SKIP else ""
 print(f"\n\033[1m{len(PASS)} passed, {len(FAIL)} failed{tail}\033[0m")

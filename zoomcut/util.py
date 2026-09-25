@@ -1,6 +1,6 @@
 """Shared helpers: platform detection, tool discovery, ffmpeg probing."""
 from __future__ import annotations
-import json, os, shutil, subprocess, sys
+import json, os, shutil, subprocess, sys, time
 
 IS_MAC = sys.platform == "darwin"
 IS_WIN = os.name == "nt"
@@ -157,6 +157,23 @@ def probe(path: str) -> dict:
         "nb_frames": int(video.get("nb_frames") or 0),
         "has_audio": any(s.get("codec_type") == "audio" for s in data.get("streams", [])),
     }
+
+
+def patient(fn, *args, seconds: float = 5.0):
+    """Run a file operation, retrying while Windows says the file is in use.
+
+    On Windows a file that ffmpeg has only just closed - or that the virus
+    scanner is still reading - refuses to be deleted or replaced for a
+    moment afterwards, so one attempt fails now and then. Everywhere else a
+    single attempt is the whole story."""
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            return fn(*args)
+        except PermissionError:
+            if not IS_WIN or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
 
 
 def clamp(v: float, lo: float, hi: float) -> float:

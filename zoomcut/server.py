@@ -16,7 +16,7 @@ from .director import DirectorConfig, plan, keyframes, Shot, _activity_box, _fra
 from .project import (new_project, save, load, import_style_preset, PRESETS, DEFAULT_SPRING,
                       _deep_update)
 from .render import render, still
-from .util import ZoomcutError, probe, output_dir, platform_name, have, clamp, popen
+from .util import ZoomcutError, probe, output_dir, platform_name, have, clamp, popen, patient
 from .winlist import pickable, WindowListError
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -741,7 +741,7 @@ class Handler(BaseHTTPRequestHandler):
                     media._unlink(part)
                     return self._json({"ok": True, "path": S.allow(twin), "kind": kind,
                                        "size": got, "existing": True})
-            os.replace(part, dst)
+            patient(os.replace, part, dst)
         except (OSError, ZoomcutError) as e:
             media._unlink(part)
             self.close_connection = True
@@ -1045,7 +1045,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def shutdown_session() -> None:
-    """Leave no ffmpeg behind: stop media prep and any render."""
+    """Leave nothing behind: finish a recording in progress (a killed
+    recorder leaves a file that will not open), stop media prep and any
+    render."""
+    rec = S.rec
+    if rec is not None and rec.running:
+        try:
+            recorder.stop(rec)
+        except Exception:                                    # pragma: no cover
+            traceback.print_exc()
+        S.rec = None
     S.media.stop()
     S.cancel.set()
     t = S.render_thread
@@ -1053,8 +1062,25 @@ def shutdown_session() -> None:
         t.join(timeout=10)
 
 
-def serve(host="127.0.0.1", port=8765, open_browser=True):
+def _exit_with_stdin(httpd) -> None:
+    """Stop when whoever started us closes our stdin - or dies, which closes
+    it too. The desktop app runs the server this way, so a crashed or
+    force-quit app can never leave a server behind."""
+    import sys
+
+    def watch():
+        try:
+            while sys.stdin.buffer.read(4096):
+                pass
+        except (OSError, ValueError):
+            pass
+        httpd.shutdown()
+    threading.Thread(target=watch, daemon=True, name="zoomcut-stdin").start()
+
+
+def serve(host="127.0.0.1", port=8765, open_browser=True, exit_with_stdin=False):
     httpd = ThreadingHTTPServer((host, port), Handler)
+    port = httpd.server_address[1]            # the real one, when asked for port 0
     url = f"http://{host}:{port}/"
     bound = _hostname(host)
     if bound not in LOOPBACK:
@@ -1067,10 +1093,13 @@ def serve(host="127.0.0.1", port=8765, open_browser=True):
             HOSTS.add(bound)
             print(f"warning: serving on {host} - anyone who can reach that address can record\n"
                   "         this screen and read the recordings. There is no login.")
+    # the address first, and flushed: a parent reading a pipe waits for it
+    print(f"zoomcut ui  ->  {url}", flush=True)
     ok, why = recorder.available()
-    print(f"zoomcut ui  ->  {url}")
     print(f"screen recording: {'ready' if ok else 'BLOCKED - ' + why}")
-    print("press Ctrl-C to stop")
+    print("press Ctrl-C to stop", flush=True)
+    if exit_with_stdin:
+        _exit_with_stdin(httpd)
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

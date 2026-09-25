@@ -14,7 +14,7 @@ import hashlib, json, math, os, shutil, subprocess, tempfile, threading
 from typing import Callable
 
 from . import util
-from .util import ZoomcutError, probe, ffmpeg
+from .util import ZoomcutError, probe, ffmpeg, patient
 
 ROOT: str | None = None        # tests point these at a temp dir
 POSTERS: str | None = None
@@ -176,7 +176,7 @@ def prepare(source: str, progress: Callable[[int, str], None] | None = None,
                     dur, lambda f: report(int(f * 90), "building preview"), track)
             if not alive():
                 return None
-            os.replace(tmp, proxy)
+            patient(os.replace, tmp, proxy)
         finally:
             _unlink(tmp)
     if not alive():
@@ -198,13 +198,13 @@ def prepare(source: str, progress: Callable[[int, str], None] | None = None,
                 dur, lambda f: None, track)
         if not alive():
             return None
-        os.replace(tmp, strip)
+        patient(os.replace, tmp, strip)
     finally:
         _unlink(tmp)
     meta = os.path.join(d, "strip.json")
     with open(f"{meta}.{tag}.part", "w") as f:
         json.dump(lay, f)
-    os.replace(f"{meta}.{tag}.part", meta)
+    patient(os.replace, f"{meta}.{tag}.part", meta)
     try:
         os.utime(d, None)
     except OSError:
@@ -297,7 +297,7 @@ def poster(path: str) -> str:
                               "-i", p, "-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "5",
                               "-update", "1", "-f", "image2", "-c:v", "mjpeg", tmp])
                 if r.returncode == 0 and os.path.isfile(tmp) and os.path.getsize(tmp) > 0:
-                    os.replace(tmp, dst)
+                    patient(os.replace, tmp, dst)
                     break
             else:
                 raise ZoomcutError(f"could not read a frame from {os.path.basename(p)}")

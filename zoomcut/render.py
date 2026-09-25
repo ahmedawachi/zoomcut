@@ -11,7 +11,7 @@ from typing import Callable
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-from .util import ffmpeg, ZoomcutError
+from .util import ffmpeg, ZoomcutError, patient
 from . import wallpapers
 
 Image.MAX_IMAGE_PIXELS = None
@@ -214,7 +214,7 @@ def _partial(out_path: str) -> str:
 
 def _remove(path: str) -> None:
     try:
-        os.remove(path)
+        patient(os.remove, path)
     except OSError:
         pass
 
@@ -349,7 +349,7 @@ def render(project: dict, out_path: str, preview: bool = False,
         _remove(tmp)
         raise ZoomcutError("no frames were decoded from the source")
     try:
-        os.replace(tmp, out_path)
+        patient(os.replace, tmp, out_path)
     except OSError as e:          # Windows: the old export is open in a player
         _remove(tmp)
         raise ZoomcutError(f"could not write {out_path}: {e.strerror or e} - is it open somewhere?")
