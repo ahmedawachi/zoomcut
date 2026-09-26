@@ -22,3 +22,6 @@ venv/
 build/
 dist/
 *.spec.bak
+
+# desktop app
+node_modules/

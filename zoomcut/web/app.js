@@ -14,6 +14,13 @@ import { $, h, icon, toast, tooltips, modal, isTyping, kbd, fmt, store, remember
 
 const VIDEO = /\.(mov|mp4|m4v|mkv|webm|avi)$/i;
 const IMAGE = /\.(png|jpe?g|webp|heic|bmp|tiff?)$/i;
+const PROJECT = /\.json$/i;
+
+// Inside the desktop app the same page gets a small native bridge: real file
+// paths, native dialogs and a menu. In a browser this is null and nothing
+// below changes.
+const DESKTOP = window.zoomcutDesktop || null;
+if (DESKTOP) document.documentElement.dataset.desktop = DESKTOP.platform;
 
 // ---------------------------------------------------------------- views
 function showView(v) {
@@ -111,15 +118,14 @@ function open(pj) {
 }
 
 async function openFile(file) {
+  // the desktop app knows where the file is, so it is opened in place
+  const local = DESKTOP?.pathForFile(file);
+  if (local) return openPath(local);
   if (IMAGE.test(file.name)) {
     if (!S.project) { toast('That is an image — open a recording first, then use it as the background.'); return; }
     try {
       const r = await upload(file).promise;
-      checkpoint('Background');
-      Object.assign(S.doc.style.background, { type: 'image', path: r.path });
-      changed('style');
-      showTab('background');
-      toast('Background set.', { kind: 'ok', action: { label: 'Undo', run: doUndo } });
+      setBackgroundImage(r.path);
     } catch (e) { toast(e.message, { kind: 'err' }); }
     return;
   }
@@ -135,6 +141,27 @@ async function openFile(file) {
     done();
     toast(e.message, { kind: 'err', ms: 10000 });
   }
+}
+
+function setBackgroundImage(path) {
+  checkpoint('Background');
+  Object.assign(S.doc.style.background, { type: 'image', path });
+  changed('style');
+  showTab('background');
+  toast('Background set.', { kind: 'ok', action: { label: 'Undo', run: doUndo } });
+}
+
+/** A file by its path: a recording, a saved project, or a background image. */
+async function openPath(p) {
+  if (!p) return;
+  const name = p.split(/[\\/]/).pop();
+  if (PROJECT.test(name)) return loadFile(p);
+  if (IMAGE.test(name)) {
+    if (!S.project) { toast('That is an image — open a recording first, then use it as the background.'); return; }
+    return setBackgroundImage(p);
+  }
+  if (!VIDEO.test(name)) { toast(`${name} is not a video Zoomcut can open.`, { kind: 'err' }); return; }
+  await analyze(p);
 }
 
 // ---------------------------------------------------------------- recording
@@ -184,9 +211,12 @@ function statusSheet() {
   const m = modal(h('div', { class: 'status-sheet' },
     h('header', { class: 'xhead' }, h('div', null, h('h2', null, 'Zoomcut ', s.version || ''), h('p', null, `${s.platform || ''} · captures with ${s.backend || '?'}`)),
       h('button', { class: 'ib', type: 'button', 'aria-label': 'Close', onclick: () => m.close() }, icon('x'))),
-    line(!!s.ffmpeg, s.ffmpeg ? 'ffmpeg is ready' : 'ffmpeg is missing', s.ffmpeg ? null : 'macOS: brew install ffmpeg · Windows: winget install Gyan.FFmpeg · Linux: apt/dnf/pacman install ffmpeg'),
+    line(!!s.ffmpeg, s.ffmpeg ? (DESKTOP ? 'ffmpeg is built in' : 'ffmpeg is ready') : 'ffmpeg is missing',
+      s.ffmpeg ? null : 'macOS: brew install ffmpeg · Windows: winget install Gyan.FFmpeg · Linux: apt/dnf/pacman install ffmpeg'),
     line(ok, ok ? 'Screen recording is allowed' : 'Screen recording is blocked', ok ? null : why),
     line(true, 'Files go to', s.outDir, true),
+    DESKTOP && s.outDir ? h('button', { class: 'btn small', type: 'button', onclick: () => DESKTOP.openFolder(s.outDir) },
+      icon('folder'), 'Open the folder') : null,
     h('p', { class: 'note dim' }, 'Everything runs on this machine. Nothing is uploaded.')), { cls: 'small', label: 'Status' });
 }
 
@@ -352,6 +382,34 @@ function wire() {
   document.addEventListener('visibilitychange', () => { if (document.hidden) flushOnExit(); });
 }
 
+// ---------------------------------------------------------------- desktop menu
+let bootDone;
+const booted = new Promise(r => { bootDone = r; });
+
+/** Edit > Undo is the editor's undo - unless a text field has the focus,
+ *  where it means what it means everywhere else. */
+function textEdit(cmd) {
+  const t = document.activeElement;
+  if (!t || !(t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName)) || /^(range|checkbox|radio|button|color)$/.test(t.type)) return false;
+  document.execCommand(cmd);
+  return true;
+}
+
+addEventListener('zoomcut:menu', async e => {
+  await booted;
+  const { action, arg } = e.detail || {};
+  const needsProject = () => { if (!S.project) { toast('Open or record something first.'); return false; } return true; };
+  switch (action) {
+    case 'new': pause(); showView('home'); break;
+    case 'open-path': openPath(arg); break;
+    case 'save': if (needsProject()) saveProject(); break;
+    case 'export': if (needsProject()) openExport(); break;
+    case 'undo': if (!textEdit('undo')) doUndo(); break;
+    case 'redo': if (!textEdit('redo')) doRedo(); break;
+    case 'shortcuts': if (!$('#modals').children.length) shortcutSheet(); break;
+  }
+});
+
 // ---------------------------------------------------------------- boot
 (async function boot() {
   tooltips();
@@ -359,7 +417,7 @@ function wire() {
   initTimeline();
   initInspector();
   initExporter();
-  initHome({ analyze, load: loadFile, play: playFile, openFile });
+  initHome({ analyze, load: loadFile, play: playFile, openFile, desktop: DESKTOP });
   wire();
   dropping();
   emit('history');
@@ -378,5 +436,6 @@ function wire() {
   if (pj) { open(pj); refreshWallpapers(); }
   else showView('home');
   document.body.classList.add('booted');
+  bootDone();
   setTimeout(pollState, 1200);
 })();

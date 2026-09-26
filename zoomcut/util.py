@@ -57,7 +57,12 @@ def tool(name: str) -> str:
     if name in _TOOL_CACHE:
         return _TOOL_CACHE[name]
     env = os.environ.get(f"ZOOMCUT_{name.upper()}")
-    found = env if env and os.path.isfile(env) else shutil.which(name)
+    found = env if env and os.path.isfile(env) else None
+    if not found and FROZEN:
+        # a packaged build carries an ffmpeg known to work with it; prefer that
+        # to whatever else is on PATH
+        found = next((p for p in _search_paths(name)[:4] if os.path.isfile(p)), None)
+    found = found or shutil.which(name)
     if not found:
         for p in _search_paths(name):
             if os.path.isfile(p):

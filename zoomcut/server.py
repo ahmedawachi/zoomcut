@@ -16,7 +16,7 @@ from .director import DirectorConfig, plan, keyframes, Shot, _activity_box, _fra
 from .project import (new_project, save, load, import_style_preset, PRESETS, DEFAULT_SPRING,
                       _deep_update)
 from .render import render, still
-from .util import ZoomcutError, probe, output_dir, platform_name, have, clamp, popen, patient
+from .util import ZoomcutError, probe, output_dir, platform_name, have, clamp, popen, patient, IS_WIN
 from .winlist import pickable, WindowListError
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -1076,6 +1076,52 @@ def _exit_with_stdin(httpd) -> None:
             pass
         httpd.shutdown()
     threading.Thread(target=watch, daemon=True, name="zoomcut-stdin").start()
+    if IS_WIN:
+        threading.Thread(target=_exit_with_parent, args=(httpd,), daemon=True,
+                         name="zoomcut-parent").start()
+
+
+def _exit_with_parent(httpd) -> None:
+    """Windows: also watch the process that started us. Killing it does not
+    always end the read on the other side of its pipe to us. Waits on its
+    process handle when we may open one - Chromium's browser process can
+    refuse - and otherwise looks for it in the process list twice a second,
+    which needs no rights on it at all."""
+    import ctypes
+    from ctypes import wintypes
+    if not hasattr(ctypes, "WinDLL"):
+        return
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k32.WaitForSingleObject.restype = wintypes.DWORD
+    k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    SYNCHRONIZE, INFINITE = 0x00100000, 0xFFFFFFFF
+    parent = os.getppid()
+    handle = k32.OpenProcess(SYNCHRONIZE, False, parent)
+    if handle:
+        k32.WaitForSingleObject(handle, INFINITE)
+    else:
+        while _pid_running(parent):
+            time.sleep(0.5)
+    httpd.shutdown()
+
+
+def _pid_running(pid: int) -> bool:
+    """Windows: is there a process with this id? From the process list, so it
+    works for processes we are not allowed to open."""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    size = 1024
+    while True:
+        ids = (wintypes.DWORD * size)()
+        used = wintypes.DWORD()
+        if not k32.K32EnumProcesses(ids, ctypes.sizeof(ids), ctypes.byref(used)):
+            return True                      # cannot tell, so do not stop
+        if used.value < ctypes.sizeof(ids):  # the whole list fitted
+            return pid in ids[:used.value // ctypes.sizeof(wintypes.DWORD)]
+        size *= 4
 
 
 def serve(host="127.0.0.1", port=8765, open_browser=True, exit_with_stdin=False):

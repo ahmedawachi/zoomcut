@@ -1,0 +1,25 @@
+{
+  "name": "zoomcut-desktop",
+  "productName": "Zoomcut",
+  "version": "0.0.0-dev",
+  "description": "Record your screen, get a video that looks edited.",
+  "homepage": "https://github.com/ahmedawachi/zoomcut",
+  "author": {
+    "name": "Ahmed Awachi",
+    "email": "ahawachi@al-amthal.com"
+  },
+  "license": "MIT",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --config builder.config.js --publish never",
+    "dist:dir": "electron-builder --config builder.config.js --dir --publish never",
+    "test:e2e": "node test/e2e.mjs"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "playwright-core": "1.63.0"
+  }
+}

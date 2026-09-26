@@ -275,6 +275,17 @@ input[type=text]:focus, input[type=number]:focus { border-color: var(--accent); 
 .perm-i .ic { color: var(--warn); margin-top: 1px; }
 .perm-i b { display: block; font-size: 12.5px; }
 .perm-i span { font-size: 12px; color: #d9c08f; }
+.perm-i .btn { margin-top: 8px; }
+
+/* ---------------------------------------------------------------- desktop app */
+/* the editor's top bar is the window's title bar: it drags the window, and
+   leaves room for the traffic lights (macOS) or the window controls (Windows) */
+html[data-desktop] .top { -webkit-app-region: drag; }
+html[data-desktop] .top button, html[data-desktop] .top input, html[data-desktop] .top a { -webkit-app-region: no-drag; }
+html[data-desktop="darwin"] .top { padding-left: 86px; }
+html[data-desktop="win32"] .top { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 12px); }
+html[data-desktop] .modal-back, html[data-desktop] .busy-overlay, html[data-desktop] .rec-overlay,
+html[data-desktop] .countdown { -webkit-app-region: no-drag; }
 
 .dropzone {
   flex: 1; min-height: 190px; position: relative; overflow: hidden;

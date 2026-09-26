@@ -26,18 +26,22 @@ shadow, the camera pushes in where it matters and **holds perfectly still where 
 
 ---
 
-```bash
-zoomcut            # opens the app in your browser
-```
+<div align="center">
 
-Pick a window. Hit record. Hit stop. That's the whole workflow.
+### [Download Zoomcut](https://github.com/ahmedawachi/zoomcut/releases/latest)
+
+**macOS** (Apple Silicon) · **Windows** · **Linux** — ffmpeg is built in, there is nothing else to install
+
+</div>
+
+Open it, pick a window, hit record, hit stop. That's the whole workflow.
 
 <div align="center">
-<img src="docs/screenshot-app.png" alt="The Zoomcut editor: a live preview, the look inspector and a timeline of zooms" width="100%">
+<img src="docs/screenshot-app.png" alt="The Zoomcut editor: a live preview, the zoom inspector and a timeline of zooms" width="100%">
 </div>
 
 Zoomcut is an open-source **screen recorder with automatic zoom** for **macOS, Windows and
-Linux** — a local app for making product demos, tutorials and bug reports that look edited,
+Linux** — a desktop app for making product demos, tutorials and bug reports that look edited,
 without opening a video editor.
 
 - **Records a window, a display or a region** — native capture on each platform
@@ -77,52 +81,57 @@ leaves the frame alone.
 
 ## Requirements
 
-Python is only needed if you install from pip or source — the downloadable app bundles it.
-Everything else is one package:
-
-|  | |
-|---|---|
-| **OS** | macOS 13+, Windows 10+, or Linux with X11 |
-| **ffmpeg** | required, see step 1 below |
-| **Python** | 3.10+ with `numpy` and `Pillow` — *not needed for the download* |
+|  | the app | the command line |
+|---|---|---|
+| **OS** | macOS 13+ on Apple Silicon · Windows 10+ x64 · Linux x64 with X11 (Ubuntu 22.04 or newer, or the like) | the same — and Intel Macs, through pip |
+| **ffmpeg** | built in | built into the download; `pip` and source installs need one |
+| **Python** | not needed | 3.10+ with `numpy` and `Pillow`, for `pip` and source installs |
 
 Nothing runs in the background, there is no account, and nothing is uploaded: the app binds to
 `127.0.0.1` and only serves files it produced itself.
 
 ## Install
 
-Three steps.
+### The app
 
-### 1 · Install ffmpeg
+Download it from [**Releases**](https://github.com/ahmedawachi/zoomcut/releases/latest):
 
-Zoomcut uses ffmpeg to read and write video. One line for your platform:
+| | download | install |
+|---|---|---|
+| **macOS** 13+, Apple Silicon | `Zoomcut-…-mac-arm64.dmg` | Open it and drag Zoomcut to Applications |
+| **Windows** 10+, x64 | `Zoomcut-…-win-x64.exe` | Run it — it installs for you, no admin rights, with a Start menu entry |
+| **Linux** x64 | `Zoomcut-…-linux-x86_64.AppImage` | `chmod +x Zoomcut-*.AppImage`, then run it |
+| | `Zoomcut-…-linux-amd64.deb` | `sudo apt install ./Zoomcut-*.deb` |
 
-| platform | command |
-|---|---|
-| **macOS** | `brew install ffmpeg` |
-| **Windows** | `winget install Gyan.FFmpeg` |
-| **Debian / Ubuntu** | `sudo apt install ffmpeg` |
-| **Fedora** | `sudo dnf install ffmpeg` |
-| **Arch** | `sudo pacman -S ffmpeg` |
+ffmpeg comes inside the app, so that's all — and it never touches an ffmpeg you already have.
 
-Already have it somewhere unusual? Point Zoomcut at it: `ZOOMCUT_FFMPEG=/path/to/ffmpeg`.
+**The first time you open it:**
 
-### 2 · Get Zoomcut — pick one
+- **macOS** — the app isn't notarized by Apple yet, so macOS refuses to open it the first time.
+  Go to System Settings › Privacy & Security and click **Open Anyway**. Zoomcut then needs
+  **Screen & System Audio Recording** permission: the home screen has a button straight to the
+  right settings pane. Switch Zoomcut on there, then quit and reopen it.
+- **Windows** — SmartScreen may say *Windows protected your PC*: click **More info › Run anyway**.
+- **Linux** — the AppImage needs FUSE 2: `sudo apt install libfuse2` (`libfuse2t64` on Ubuntu
+  24.04). To record a single window Zoomcut needs `wmctrl` or `xdotool`; the `.deb` installs
+  them for you. It captures through **X11**, so on a Wayland session log in with Xorg — it tells
+  you so, rather than recording a black video.
+
+### Or the command line
+
+The same Zoomcut, without the window. Pick one:
 
 <table>
-<tr><th width="33%">A · Download the app</th><th width="33%">B · pip</th><th width="33%">C · From source</th></tr>
+<tr><th width="33%">The download</th><th width="33%">pip</th><th width="33%">From source</th></tr>
 <tr valign="top">
 <td>
 
-*Easiest. No Python.*
+*ffmpeg included, no Python.*
 
-Grab your build from
-[**Releases**](https://github.com/ahmedawachi/zoomcut/releases/latest),
-unpack it, and run the `zoomcut`
-binary inside.
-
-Available for Apple Silicon macOS,
-Windows x86_64 and Linux x86_64.
+Unpack the `zoomcut-…` archive for
+your platform from
+[**Releases**](https://github.com/ahmedawachi/zoomcut/releases/latest)
+and run the `zoomcut` inside.
 
 </td><td>
 
@@ -131,7 +140,7 @@ pip install zoomcut
 ```
 
 Works everywhere, including
-Intel Macs.
+Intel Macs. Needs ffmpeg.
 
 </td><td>
 
@@ -143,16 +152,27 @@ pip install numpy pillow
 ./zoomcut-cli
 ```
 
+Needs ffmpeg.
+
 </td></tr></table>
 
-> **macOS, first run:** the download is not signed by Apple, so right-click the `zoomcut`
-> binary → **Open** the first time, instead of double-clicking it.
+For `pip` and source installs, install ffmpeg once:
 
-### 3 · Check it, then run it
+| platform | command |
+|---|---|
+| **macOS** | `brew install ffmpeg` |
+| **Windows** | `winget install Gyan.FFmpeg` |
+| **Debian / Ubuntu** | `sudo apt install ffmpeg` |
+| **Fedora** | `sudo dnf install ffmpeg` |
+| **Arch** | `sudo pacman -S ffmpeg` |
+
+Already have it somewhere unusual? Point Zoomcut at it: `ZOOMCUT_FFMPEG=/path/to/ffmpeg`.
+
+Then check the install and start it:
 
 ```bash
 zoomcut doctor     # confirms ffmpeg, capture, window picking and where files will go
-zoomcut            # opens the app at http://127.0.0.1:8765
+zoomcut            # opens the editor in your browser at http://127.0.0.1:8765
 ```
 
 `doctor` prints a line per requirement and tells you exactly what to install if something is
@@ -171,30 +191,23 @@ Zoomcut 1.1.1 on macOS
 Everything Zoomcut needs is here. Run `zoomcut` to start.
 ```
 
-### One-time extras
-
-**macOS — allow screen recording.** System Settings → Privacy & Security → **Screen & System
-Audio Recording** → enable whatever runs Zoomcut (your terminal, or the Zoomcut app), then
-**restart it**. `zoomcut doctor` and the app's status dot both go green once it is granted.
-
-**Linux — window picking.** Listing windows needs one small helper:
-`sudo apt install wmctrl` (or `xdotool`). Without it, record a region or the whole display
-instead. Zoomcut captures through **X11**; on a Wayland session log in with Xorg — it will tell
-you rather than hand you a black video.
-
-**Windows — nothing extra.**
+On macOS, recording from the command line needs the same Screen Recording permission, given
+to your terminal instead — then restart the terminal. If macOS refuses to run the downloaded
+`zoomcut`, it's the download quarantine: `xattr -dr com.apple.quarantine zoomcut/`.
 
 ## The app
 
-```bash
-zoomcut              # same as: zoomcut ui
-```
+Open **Zoomcut** like any other app. The command line's `zoomcut` opens the very same editor in
+your browser, at `http://127.0.0.1:8765`.
 
-Opens `http://127.0.0.1:8765`.
+<div align="center">
+<img src="docs/screenshot-home.png" alt="The Zoomcut home screen: pick a window to record, or open a recording you already have" width="100%">
+</div>
 
 **Start** by recording — pick a window from a searchable list, a display or a region; a
-three-second countdown gives you time to switch to it — or drop a recording you already have
-anywhere on the page. Your recent recordings, projects and exports are one click away.
+three-second countdown gives you time to switch to it — or open a recording you already have:
+drop it anywhere on the window or on Zoomcut's Dock icon, or choose it with **File › Open**. It's
+edited where it is, never copied. Your recent recordings, projects and exports are one click away.
 
 **Then edit**, or don't — Zoomcut has already placed the zooms by the time the editor opens.
 
@@ -209,7 +222,9 @@ anywhere on the page. Your recent recordings, projects and exports are one click
 | **Export** | 1080p, 1440p or 4K at 30 or 60 fps, with a quick 1280-wide draft; cancel any time, then play the result or show it in its folder. |
 
 Every change can be undone (<kbd>⌘Z</kbd>), <kbd>?</kbd> lists the keyboard shortcuts, and the
-last look you used is where the next recording starts.
+last look you used is where the next recording starts. The menu bar has all of it too — **File ›
+New Recording, Open, Save, Export**, **Edit › Undo** — and quitting in the middle of a recording
+asks first, then keeps what was recorded.
 
 Finished files go to `~/Movies/Zoomcut` (macOS), `%USERPROFILE%\Videos\Zoomcut` (Windows) or
 `~/Videos/Zoomcut` (Linux).
@@ -362,12 +377,19 @@ python3 tests/test_all.py --quick     # skips wallpapers, window list, live reco
 python3 tools/sim_platform.py linux   # run the suite as if this were Linux
 ```
 
-**314 checks.** `sim_platform.py` flips the platform flags so the Windows and Linux
+**317 checks.** `sim_platform.py` flips the platform flags so the Windows and Linux
 branches of our own logic can be exercised from any machine — it is how the "this machine has no
 wallpapers installed" assumption was caught before it reached a server image. CI then runs the
 suite for real on **macOS, Windows and Linux**, and on Linux and Windows it goes
 further: it records for real (Linux under a virtual X display), auto-cuts that capture and
 renders it, so the whole cycle is exercised on each platform every push.
+
+Every push also builds the desktop app on all three platforms and drives the packaged app end to
+end (`desktop/test/e2e.mjs`): it must start its own server with the ffmpeg inside it, open a
+recording where it is, play the preview, export a draft from the menu, record the screen for real
+on Windows and Linux, and leave nothing running when it quits. Then it's killed in the middle of
+an export, and still has to leave no server, no ffmpeg and no half-written file behind. Releases
+are built by that same workflow, so a release can only ship an app that passed it.
 
 What's covered: camera maths (spring convergence, crop clamping under hostile input); the
 director's invariants on synthetic clips including a dead-still one and a strobing one — always
@@ -384,9 +406,10 @@ local server refuses requests from other websites — a page you visit cannot st
 read your files — uploads are checked and never overwrite anything, a failed or cancelled export
 never costs you a file that was already there, and the preview's caches stay bounded.
 
-Regenerate the documentation images with `python3 tools/make_docs.py` and the brand assets with
-`python3 tools/make_brand.py`. The screenshots use a synthetic recording and a fixed window list
-(`ZOOMCUT_DEMO=1`), so nobody's real screen ends up in the repository.
+Regenerate the documentation images with `python3 tools/make_docs.py`, the brand assets with
+`python3 tools/make_brand.py`, and the app screenshots with `node desktop/test/screenshots.mjs`,
+which captures the packaged app's own window. They use a synthetic recording and a fixed window
+list (`ZOOMCUT_DEMO=1`), so nobody's real screen ends up in the repository.
 
 ## Troubleshooting
 
@@ -394,10 +417,13 @@ Run `zoomcut doctor` first — it names anything missing and how to install it.
 
 | Symptom | Fix |
 |---|---|
-| "Permission needed" (macOS) | Grant Screen Recording to whatever launched Zoomcut, then restart it |
+| macOS says Zoomcut can't be opened | System Settings › Privacy & Security › **Open Anyway**, the first time only |
+| "Windows protected your PC" | **More info › Run anyway** |
+| The AppImage doesn't start (Linux) | `sudo apt install libfuse2` (`libfuse2t64` on Ubuntu 24.04), or install the `.deb` |
+| "Permission needed" (macOS) | Grant Screen Recording to Zoomcut — or, on the command line, your terminal — then restart it |
 | "no X11 display found" (Linux) | You're on Wayland — log in with an Xorg session |
 | Window list is empty (Linux) | `sudo apt install wmctrl`, or record a region instead |
-| `ffmpeg was not found` | Install it, or point Zoomcut at it with `ZOOMCUT_FFMPEG=/path/to/ffmpeg` |
+| `ffmpeg was not found` (pip or source) | Install it, or point Zoomcut at it with `ZOOMCUT_FFMPEG=/path/to/ffmpeg` |
 | The camera zooms somewhere odd | Something else on screen was moving — a clock, a notification. Select that zoom on the timeline and drag the preview to reframe it, or delete it; on the command line, raise `--min-shot` |
 | Too much zooming | Lower `--max-zoom`, or raise `--min-zoom` so marginal moves stay wide |
 | Zooms feel too tight | Raise `--context` |
@@ -420,13 +446,29 @@ with no `pyobjc` or `pywin32`.
 | `wallpapers.py` | finds and caches the wallpapers installed on your machine |
 | `project.py` | the project file, and style-preset import |
 | `media.py` | the editor's preview proxy, filmstrip and recents posters, in a bounded cache |
-| `server.py` + `web/` | the local app: a stdlib server and a dependency-free editor |
+| `server.py` + `web/` | the editor: a stdlib server and a dependency-free web app |
 
-Releases are built by [`release.yml`](.github/workflows/release.yml): PyInstaller folder builds
-for macOS (arm64 and x86_64), Windows and Linux, plus a wheel and sdist. Folder builds, not
-one-file — a one-file bundle re-links every extension module on each launch, which costs about
-ten seconds before the app answers. The folder build starts in **0.3 s**.
+The desktop app is a native window around exactly that. [`desktop/`](desktop) is a small
+[Electron](https://www.electronjs.org) shell: it starts the Zoomcut server on a free port, shows
+its editor with a real menu bar and title bar, and stops the server with the window — the server
+also stops by itself if the app is ever killed, so nothing is left running. Packaging lives in
+[`packaging/`](packaging):
+
+| file | what it does |
+|---|---|
+| `build_desktop.py` | builds everything for the machine it runs on: `python3 packaging/build_desktop.py` |
+| `zoomcut.spec` | the PyInstaller build of the server — a folder build, which answers in **0.3 s** where a one-file build re-links every extension module on each launch and takes about ten |
+| `ffmpeg.json` + `fetch_ffmpeg.py` | the pinned ffmpeg for each platform, refused unless its sha256 matches, then run to prove it encodes H.264 and can capture the screen |
+| `desktop/builder.config.js` | electron-builder: the `.dmg`, the Windows installer, the AppImage and the `.deb` |
+
+[`build.yml`](.github/workflows/build.yml) builds and tests all of it on macOS, Windows and Linux
+on every push, and [`release.yml`](.github/workflows/release.yml) publishes what it built — the
+apps, the command-line downloads, a wheel and sdist, and ffmpeg's source.
 
 ## License
 
 [MIT](LICENSE) © Ahmed Awachi
+
+The apps and the command-line downloads include [ffmpeg](https://ffmpeg.org), which is licensed
+under the GPL — its licence and a notice naming the exact build ship inside them, and each release
+attaches the matching ffmpeg source.

@@ -75,8 +75,13 @@ def available() -> tuple[bool, str]:
             return False, "screencapture not found (is this really macOS?)"
         # NB: screencapture will not write dot-files, so the probe must not use one
         tmp = os.path.join(tempfile.gettempdir(), f"zoomcut-perm-{os.getpid()}.png")
-        p = run(["screencapture", "-x", "-t", "png", "-R", "0,0,8,8", tmp])
-        ok = p.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0
+        try:
+            # bounded: a probe waiting on a permission prompt must not stall
+            # every request that asks whether we can record
+            p = run(["screencapture", "-x", "-t", "png", "-R", "0,0,8,8", tmp], timeout=10)
+            ok = p.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0
+        except subprocess.TimeoutExpired:
+            ok = False
         try:
             os.remove(tmp)
         except OSError:

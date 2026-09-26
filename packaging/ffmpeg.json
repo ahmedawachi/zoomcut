@@ -1,0 +1,68 @@
+{
+  "_about": "The ffmpeg the downloadable apps carry: pinned builds, checked by sha256 before use. Fetched by packaging/fetch_ffmpeg.py. To move to a newer ffmpeg, change the URLs and checksums here together - a build that no longer matches its checksum is refused, never used.",
+  "platforms": {
+    "darwin-arm64": {
+      "version": "9.0.2",
+      "builder": "Martin Riedl",
+      "builder_url": "https://ffmpeg.martin-riedl.de",
+      "build_scripts": "https://git.martin-riedl.de/ffmpeg/build-script",
+      "archives": [
+        {
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",
+          "sha256": "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924",
+          "take": {"ffmpeg": "bin/ffmpeg"}
+        },
+        {
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip",
+          "sha256": "fcbe839537485eaee7a7a8bc5cbc0f90d53617e80943e8a5b2e31cb851197ea6",
+          "take": {"ffprobe": "bin/ffprobe"}
+        }
+      ]
+    },
+    "win32-x64": {
+      "version": "9.0.2",
+      "builder": "Gyan Doshi",
+      "builder_url": "https://www.gyan.dev/ffmpeg/builds/",
+      "build_scripts": "https://github.com/GyanD/codexffmpeg",
+      "archives": [
+        {
+          "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
+          "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+          "take": {
+            "ffmpeg-9.0.2-essentials_build/bin/ffmpeg.exe": "bin/ffmpeg.exe",
+            "ffmpeg-9.0.2-essentials_build/bin/ffprobe.exe": "bin/ffprobe.exe",
+            "ffmpeg-9.0.2-essentials_build/README.txt": "licenses/ffmpeg/BUILD-README.txt"
+          }
+        }
+      ]
+    },
+    "linux-x64": {
+      "version": "8.1.3",
+      "builder": "BtbN",
+      "builder_url": "https://github.com/BtbN/FFmpeg-Builds",
+      "build_scripts": "https://github.com/BtbN/FFmpeg-Builds",
+      "_why": "The only widely used Linux build that includes x11grab, which Zoomcut records the screen with. BtbN prunes old autobuilds: if this URL starts failing, pin the newest n8.x gpl-shared build here.",
+      "archives": [
+        {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-25-15-37/ffmpeg-n8.1.3-linux64-gpl-shared-8.1.tar.xz",
+          "sha256": "c69abb83d6f9a409b51f26a23d1b0607b8c5b7c484f632c8cbc08e787ef11273",
+          "take": {
+            "ffmpeg-n8.1.3-linux64-gpl-shared-8.1/bin/ffmpeg": "bin/ffmpeg",
+            "ffmpeg-n8.1.3-linux64-gpl-shared-8.1/bin/ffprobe": "bin/ffprobe",
+            "ffmpeg-n8.1.3-linux64-gpl-shared-8.1/lib/": "lib/"
+          }
+        }
+      ]
+    }
+  },
+  "sources": {
+    "9.0.2": {
+      "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+      "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e"
+    },
+    "8.1.3": {
+      "url": "https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz",
+      "sha256": "7138d28c96d9d3e3af4ee3d8cad72741f8ffb40da90c1112235dea3ecd3178a3"
+    }
+  }
+}

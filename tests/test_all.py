@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Zoomcut end-to-end test suite. Run: python3 tests/test_all.py"""
 from __future__ import annotations
-import http.client, json, math, os, shutil, socket, subprocess, sys, tempfile, threading, time
+import http.client, json, math, os, re, shutil, socket, subprocess, sys, tempfile, threading, time
 import urllib.parse
 import urllib.request, urllib.error
 
@@ -1463,6 +1463,83 @@ if _url:
         _s.close()
     check("...and nothing is left listening on its port", _free)
 _proc.stdout.close()
+
+# On Windows a killed app does not always end the read on its pipe to the
+# server, so the server also waits on the process that started it - checked
+# here against a process killed for real (the real OS, not a simulated one:
+# this is kernel32)
+if os.name == "nt":
+    _victim = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    _stopped = threading.Event()
+
+    class _Httpd:
+        def shutdown(self):
+            _stopped.set()
+    _getppid = os.getppid
+    os.getppid = lambda: _victim.pid
+    try:
+        check("the process list sees a running process", srv._pid_running(_victim.pid))
+        threading.Thread(target=srv._exit_with_parent, args=(_Httpd(),), daemon=True).start()
+        time.sleep(1.0)
+        check("the server keeps going while the process that started it runs", not _stopped.is_set())
+        _victim.kill()
+        check("...and stops when that process is killed", _stopped.wait(10))
+        _victim.wait()
+        check("...which the process list shows too (for a parent it may not open)",
+              not srv._pid_running(_victim.pid))
+    finally:
+        os.getppid = _getppid
+        _victim.kill()
+        _victim.wait()
+else:
+    skip("stopping with the process that started it", "Windows only")
+
+# A workflow passes a signing secret that was never added as an empty string;
+# electron-builder reads an empty CSC_LINK as a certificate path and fails.
+import importlib.util
+_spec = importlib.util.spec_from_file_location("build_desktop", os.path.join(ROOT, "packaging", "build_desktop.py"))
+_bd = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_bd)
+_saved = {k: os.environ.get(k) for k in ("CSC_LINK", "APPLE_TEAM_ID")}
+os.environ["CSC_LINK"], os.environ["APPLE_TEAM_ID"] = "", "TEAM1234"
+try:
+    _senv = _bd.signing_env()
+    check("the app build drops signing secrets that are set but empty",
+          "CSC_LINK" not in _senv and _senv.get("APPLE_TEAM_ID") == "TEAM1234" and "PATH" in _senv)
+finally:
+    for _k, _v in _saved.items():
+        if _v is None:
+            os.environ.pop(_k, None)
+        else:
+            os.environ[_k] = _v
+
+# ffmpeg's macOS host answers Python's default user agent with a 403, so the
+# build has to say who it is (caught only on a runner: a Python without CA
+# certificates falls back to curl, which it lets through)
+_spec = importlib.util.spec_from_file_location("fetch_ffmpeg", os.path.join(ROOT, "packaging", "fetch_ffmpeg.py"))
+_ff = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_ff)
+_seen = []
+def _fake_urlopen(req, *a, **k):
+    _seen.append(req.get_header("User-agent") if hasattr(req, "get_header") else None)
+    raise _ff.urllib.error.URLError("stop here")
+_real_urlopen = _ff.urllib.request.urlopen
+_ff.urllib.request.urlopen = _fake_urlopen
+try:
+    _ff.download("https://example.invalid/ffmpeg.zip", os.path.join(TMP, "ua-probe.zip"))
+except SystemExit:
+    pass
+finally:
+    _ff.urllib.request.urlopen = _real_urlopen
+check("the ffmpeg download says who it is, not Python-urllib",
+      bool(_seen) and bool(_seen[0]) and "urllib" not in _seen[0].lower(), str(_seen))
+
+# the apps are named from pyproject.toml, the server reports __version__, and
+# a release links its downloads by the tag - one version, in both places
+with open(os.path.join(ROOT, "pyproject.toml"), encoding="utf-8") as _f:
+    _pyv = re.search(r'^version\s*=\s*"([^"]+)"', _f.read(), re.M)
+check("pyproject.toml and the package carry the same version",
+      bool(_pyv) and _pyv.group(1) == zoomcut.__version__, f"{_pyv and _pyv.group(1)} vs {zoomcut.__version__}")
 
 tail = f", {len(SKIP)} skipped" if SKIP else ""
 print(f"\n\033[1m{len(PASS)} passed, {len(FAIL)} failed{tail}\033[0m")

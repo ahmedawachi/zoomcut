@@ -8,6 +8,10 @@ on:
   workflow_dispatch:
 
 jobs:
+  # the downloadable apps: built, then driven end to end on each platform
+  app:
+    uses: ./.github/workflows/build.yml
+
   test:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}

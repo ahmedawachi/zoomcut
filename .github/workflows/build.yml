@@ -1,0 +1,137 @@
+name: build
+
+# The downloadable apps, built and proven on each platform. tests.yml runs this
+# on every push; release.yml runs exactly the same thing and publishes what it
+# made - so a release can only ever ship builds that passed the end-to-end test.
+on:
+  workflow_call:
+    inputs:
+      retention-days:
+        type: number
+        default: 7
+      ref:
+        description: "What to build (a release builds its tag); the pushed commit by default"
+        type: string
+        default: ""
+
+jobs:
+  app:
+    name: app · ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # No Intel-macOS leg: the macos-13 runner label sits queued for
+          # hours, which blocks the whole release. Intel Macs install with pip.
+          - { os: macos-14,       name: macOS,   platform: darwin-arm64, cli: zoomcut-macos-arm64 }
+          - { os: windows-latest, name: Windows, platform: win32-x64,    cli: zoomcut-windows-x86_64 }
+          # 22.04: the builds run on its glibc and anything newer, and its
+          # runners still allow Chromium's user-namespace sandbox
+          - { os: ubuntu-22.04,   name: Linux,   platform: linux-x64,    cli: zoomcut-linux-x86_64 }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Linux packages (an X server to run and record under)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends xvfb x11-utils wmctrl xdotool \
+            libnss3 libgbm1 libasound2 libgtk-3-0 libxss1 libxtst6
+
+      - name: Cache the pinned ffmpeg
+        uses: actions/cache@v6
+        with:
+          path: build/ffmpeg-cache
+          key: ffmpeg-${{ matrix.platform }}-${{ hashFiles('packaging/ffmpeg.json') }}
+
+      - name: Python build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pillow pyinstaller
+
+      - name: Build the server, its ffmpeg and the app
+        run: python packaging/build_desktop.py --sources dist/sources
+        env:
+          # sign only with credentials given on purpose, never a runner's keychain
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: The command-line download starts
+        shell: bash
+        run: |
+          ./dist/zoomcut/zoomcut$( [ "$RUNNER_OS" = "Windows" ] && echo .exe ) --help > /dev/null
+          ./dist/zoomcut/zoomcut$( [ "$RUNNER_OS" = "Windows" ] && echo .exe ) doctor || true
+
+      # The packaged app, driven end to end: its own server, its bundled
+      # ffmpeg, opening a recording, playing the preview, exporting a draft,
+      # and leaving nothing running when it quits. Windows and Linux also
+      # record their screen for real through the bundled ffmpeg.
+      - name: Test the app end to end (macOS)
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        run: node test/e2e.mjs
+
+      - name: Test the app end to end, recording for real (Windows)
+        if: runner.os == 'Windows'
+        working-directory: desktop
+        env:
+          ZOOMCUT_E2E_RECORD: "1"
+        run: node test/e2e.mjs
+
+      - name: Test the app end to end, recording for real (Linux, under Xvfb)
+        if: runner.os == 'Linux'
+        working-directory: desktop
+        env:
+          ZOOMCUT_E2E_RECORD: "1"
+        run: xvfb-run -a --server-args="-screen 0 1440x900x24" node test/e2e.mjs
+
+      - name: Collect the downloads
+        shell: bash
+        run: |
+          mkdir -p out
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "../out/${{ matrix.cli }}.zip" zoomcut > /dev/null
+          else
+            tar -czf "../out/${{ matrix.cli }}.tar.gz" zoomcut
+          fi
+          cd ..
+          shopt -s nullglob
+          cp desktop/dist/*.dmg desktop/dist/*.exe desktop/dist/*.AppImage desktop/dist/*.deb out/
+          cp dist/sources/*.tar.xz out/
+          ls -la out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-${{ matrix.platform }}
+          path: out/*
+          retention-days: ${{ inputs.retention-days }}
+          if-no-files-found: error
+
+      - name: Keep the end-to-end screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-${{ matrix.platform }}
+          path: desktop/dist/e2e/*.png
+          retention-days: 14
+          if-no-files-found: ignore

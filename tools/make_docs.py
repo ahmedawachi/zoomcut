@@ -6,21 +6,16 @@
 Builds the synthetic demo recording (so nothing personal ends up in the repo),
 then renders a raw-vs-Zoomcut comparison from it.
 
-The app screenshot is captured separately, because it needs a browser:
+The app screenshots are taken from the packaged desktop app on macOS - its
+real window, title bar and all - so build it first, then:
 
-    ZOOMCUT_DEMO=1 ZOOMCUT_OUTPUT_DIR=$(mktemp -d) \\
-        python3 -m zoomcut ui --port 8811 --no-open &
-    curl -s -X POST -H 'Content-Type: application/json' \\
-         -d '{"source":"docs/demo-recording.mp4"}' http://127.0.0.1:8811/api/analyze
-    npx playwright screenshot --channel chrome --device "Desktop Chrome HiDPI" \\
-        --viewport-size "1460, 1080" --wait-for-selector "#frame.live" \\
-        --wait-for-timeout 1500 "http://127.0.0.1:8811/?t=10.4" docs/screenshot-app.png
-    kill %1
+    python3 packaging/build_desktop.py --dir
+    cd desktop && node test/screenshots.mjs
 
-ZOOMCUT_DEMO=1 makes the server serve a fixed window list, so the screenshot
-never contains anybody's real window titles. The editor boots asynchronously
-and only goes live once the preview proxy is ready - hence waiting for
-#frame.live; Chrome's one-shot --screenshot fires before either happens.
+That writes docs/screenshot-app.png and docs/screenshot-home.png. It runs the
+app with ZOOMCUT_DEMO=1, which serves a fixed window list, on this synthetic
+recording, and captures only Zoomcut's own window - so nobody's real window
+titles, files or screen end up in them.
 """
 from __future__ import annotations
 import os, subprocess, sys

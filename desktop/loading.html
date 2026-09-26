@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
+<title>Zoomcut</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; place-items: center; background: #09090d; color: #a3a6b8;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Inter, Roboto, system-ui, sans-serif;
+    -webkit-app-region: drag; user-select: none; cursor: default;
+  }
+  .in { display: flex; flex-direction: column; align-items: center; gap: 18px; animation: in .4s ease both .15s; }
+  @keyframes in { from { opacity: 0; transform: translateY(4px); } }
+  svg { width: 56px; height: 56px; }
+  .bar { width: 120px; height: 3px; border-radius: 3px; background: #20212a; overflow: hidden; }
+  .bar i { display: block; width: 40%; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #6c63ff, #968cf0); animation: slide 1.1s ease-in-out infinite alternate; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  @media (prefers-reduced-motion: reduce) { .bar i { animation: none; width: 100%; } }
+</style>
+</head>
+<body>
+  <div class="in" role="status" aria-label="Starting Zoomcut">
+    <svg viewBox="0 0 100 100" aria-hidden="true">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#6c63ff"/><stop offset="1" stop-color="#968cf0"/></linearGradient></defs>
+      <rect x="9" y="9" width="82" height="82" rx="23" fill="none" stroke="url(#g)" stroke-width="8.5"/>
+      <rect x="28.5" y="28.5" width="43" height="43" rx="10.5" fill="url(#g)" stroke="#09090d" stroke-width="7"/>
+    </svg>
+    <div class="bar"><i></i></div>
+  </div>
+</body>
+</html>

@@ -149,10 +149,23 @@ function paintStatus() {
   const [ok, why] = S.sys.permission || [true, ''];
   const problems = [];
   if (!S.sys.ffmpeg) problems.push(['ffmpeg is not installed', 'Install it (macOS: brew install ffmpeg · Windows: winget install Gyan.FFmpeg · Linux: your package manager), then restart Zoomcut.']);
-  if (!ok) problems.push(['Screen recording is blocked', why]);
-  box.hidden = !problems.length;
-  box.replaceChildren(...problems.map(([t, d]) => h('div', { class: 'perm-i' }, icon('alert'), h('div', null, h('b', null, t), h('span', null, d)))));
+  const mac = handlers.desktop?.platform === 'darwin';
+  if (!ok) {
+    problems.push(['Screen recording is blocked', mac
+      ? 'Turn Zoomcut on under Privacy & Security › Screen & System Audio Recording, then quit and reopen Zoomcut.'
+      : why, mac]);
+  }
   btn.disabled = !!problems.length || !!S.sys.recording;
+  // repainted on every status poll: only rebuild when something changed,
+  // or the button inside would lose the focus every second and a half
+  const key = JSON.stringify(problems);
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.hidden = !problems.length;
+  box.replaceChildren(...problems.map(([t, d, settings]) => h('div', { class: 'perm-i' }, icon('alert'),
+    h('div', null, h('b', null, t), h('span', null, d),
+      settings ? h('button', { class: 'btn small', type: 'button', onclick: () => handlers.desktop.openScreenSettings() },
+        'Open System Settings') : null))));
 }
 
 // ---------------------------------------------------------------- recording
